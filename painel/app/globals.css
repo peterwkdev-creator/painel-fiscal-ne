@@ -1,0 +1,163 @@
+/*
+ * Tokens de design, não utilitários soltos.
+ *
+ * Sem framework de CSS de propósito: o painel tem uma tela e uma tabela, e um
+ * sistema de tokens de ~40 linhas resolve com controle total sobre tipografia e
+ * espaçamento. Uma dependência a menos para manter — ver `stack.md`.
+ *
+ * A paleta é fria e sóbria por decisão editorial: é um painel de dado público,
+ * e cor que chama atenção compete com o número, que é o que importa.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  /* Escala tipográfica em uma razão só (1.25), para hierarquia previsível. */
+  --texto-xs: 0.75rem;
+  --texto-sm: 0.875rem;
+  --texto-base: 1rem;
+  --texto-lg: 1.25rem;
+  --texto-xl: 1.5625rem;
+  --texto-2xl: 1.953rem;
+  --texto-3xl: 2.441rem;
+
+  /* Espaçamento em múltiplos de 4px: alinhamento vertical sem cálculo mental. */
+  --e-1: 0.25rem;
+  --e-2: 0.5rem;
+  --e-3: 0.75rem;
+  --e-4: 1rem;
+  --e-6: 1.5rem;
+  --e-8: 2rem;
+  --e-12: 3rem;
+  --e-16: 4rem;
+
+  --raio: 10px;
+  --largura-max: 76rem;
+
+  --fundo: #fbfcfd;
+  --superficie: #ffffff;
+  --borda: #dde3ea;
+  --borda-forte: #c3ccd6;
+  --tinta: #12212e;
+  --tinta-suave: #51606e;
+  --tinta-fraca: #7b8894;
+  --acento: #0f5c8c;
+  --acento-suave: #e8f1f7;
+  --positivo: #1a6b4f;
+  --sombra: 0 1px 2px rgb(18 33 46 / 0.05), 0 1px 3px rgb(18 33 46 / 0.06);
+
+  /* As tres faixas da Lei de Responsabilidade Fiscal, e a ausencia.
+     Nao dependem so de cor: cada faixa tambem tem rotulo em texto, porque
+     ~8% dos homens tem alguma deficiencia de visao de cores e um painel de
+     dado publico nao pode excluir um em doze leitores. */
+  --alerta: #9a3412;
+  --alerta-suave: #fdf0e8;
+  --atencao: #8a5a00;
+  --atencao-suave: #fdf6e3;
+  --ausente: #6b7280;
+  --ausente-suave: #f3f4f6;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fundo: #0d1419;
+    --superficie: #141d24;
+    --borda: #26333d;
+    --borda-forte: #3a4a57;
+    --tinta: #e6edf3;
+    --tinta-suave: #a3b1bd;
+    --tinta-fraca: #7b8894;
+    --acento: #6cb6e3;
+    --acento-suave: #16293a;
+    --alerta: #fca582;
+    --alerta-suave: #2c1509;
+    --atencao: #e8bd6a;
+    --atencao-suave: #2a2008;
+    --ausente: #9aa4b0;
+    --ausente-suave: #1b242c;
+    --positivo: #5fc79e;
+    --sombra: none;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  /* Sem `scroll-behavior: smooth` global: atrapalha quem navega por teclado e
+     quem pediu menos movimento. */
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--fundo);
+  color: var(--tinta);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  font-size: var(--texto-base);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+  margin: 0;
+  text-wrap: balance;
+}
+
+p {
+  margin: 0;
+  text-wrap: pretty;
+}
+
+a {
+  color: var(--acento);
+  text-underline-offset: 2px;
+}
+
+/* Foco visível e consistente: navegar por teclado não pode ser adivinhação. */
+:focus-visible {
+  outline: 2px solid var(--acento);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* Número em tabela alinha por dígito, não por glifo — sem isso as colunas
+   dançam e comparar valores vira esforço. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+.pular-para-conteudo {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  background: var(--superficie);
+  color: var(--tinta);
+  padding: var(--e-3) var(--e-4);
+  border: 1px solid var(--borda-forte);
+  border-radius: var(--raio);
+  z-index: 10;
+}
+
+.pular-para-conteudo:focus {
+  left: var(--e-4);
+  top: var(--e-4);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

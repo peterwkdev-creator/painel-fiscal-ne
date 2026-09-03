@@ -1,0 +1,301 @@
+{
+ "_origem": "Amostra REAL de /entes capturada em 03/09/2026. O endpoint devolve os 5.598 entes numa requisicao so; aqui ficam 20 do Nordeste (as capitais primeiro) mais 5 de fora, para o filtro por UF ter o que descartar.",
+ "_total_real_no_ne": 1793,
+ "resposta": {
+  "hasMore": false,
+  "limit": 6000,
+  "offset": 0,
+  "count": 5598,
+  "links": [
+   {
+    "rel": "self",
+    "href": "https://host-5hrds-scan.prosubnet.vcndados.oraclevcn.com/ords/cdwhprd/siconfi/tt/entes"
+   },
+   {
+    "rel": "describedby",
+    "href": "https://host-5hrds-scan.prosubnet.vcndados.oraclevcn.com/ords/cdwhprd/siconfi/metadata-catalog/tt/item"
+   },
+   {
+    "rel": "first",
+    "href": "https://host-5hrds-scan.prosubnet.vcndados.oraclevcn.com/ords/cdwhprd/siconfi/tt/entes"
+   }
+  ],
+  "items": [
+   {
+    "cod_ibge": 2304400,
+    "ente": "Fortaleza",
+    "capital": "1  ",
+    "regiao": "NE",
+    "uf": "CE",
+    "esfera": "M",
+    "exercicio": 2026,
+    "populacao": 2578483,
+    "cnpj": "07954605000160"
+   },
+   {
+    "cod_ibge": 2408102,
+    "ente": "Natal",
+    "capital": "1  ",
+    "regiao": "NE",
+    "uf": "RN",
+    "esfera": "M",
+    "exercicio": 2026,
+    "populacao": 784249,
+    "cnpj": "08241747000143"
+   },
+   {
+    "cod_ibge": 2211001,
+    "ente": "Teresina",
+    "capital": "1  ",
+    "regiao": "NE",
+    "uf": "PI",
+    "esfera": "M",
+    "exercicio": 2026,
+    "populacao": 905692,
+    "cnpj": "06554869000164"
+   },
+   {
+    "cod_ibge": 2927408,
+    "ente": "Salvador",
+    "capital": "1  ",
+    "regiao": "NE",
+    "uf": "BA",
+    "esfera": "M",
+    "exercicio": 2026,
+    "populacao": 2564204,
+    "cnpj": "13927801000149"
+   },
+   {
+    "cod_ibge": 2611606,
+    "ente": "Recife",
+    "capital": "1  ",
+    "regiao": "NE",
+    "uf": "PE",
+    "esfera": "M",
+    "exercicio": 2026,
+    "populacao": 1588376,
+    "cnpj": "10565000000192"
+   },
+   {
+    "cod_ibge": 2800308,
+    "ente": "Aracaju",
+    "capital": "1  ",
+    "regiao": "NE",
+    "uf": "SE",
+    "esfera": "M",
+    "exercicio": 2026,
+    "populacao": 630932,
+    "cnpj": "13128780000100"
+   },
+   {
+    "cod_ibge": 2704302,
+    "ente": "Maceió",
+    "capital": "1  ",
+    "regiao": "NE",
+    "uf": "AL",
+    "esfera": "M",
+    "exercicio": 2026,
+    "populacao": 994952,
+    "cnpj": "12200135000180"
+   },
+   {
+    "cod_ibge": 2111300,
+    "ente": "São Luís",
+    "capital": "1  ",
+    "regiao": "NE",
+    "uf": "MA",
+    "esfera": "M",
+    "exercicio": 2026,
+    "populacao": 1089215,
+    "cnpj": "06307102000130"
+   },
+   {
+    "cod_ibge": 2507507,
+    "ente": "João Pessoa",
+    "capital": "1  ",
+    "regiao": "NE",
+    "uf": "PB",
+    "esfera": "M",
+    "exercicio": 2026,
+    "populacao": 897633,
+    "cnpj": "08778326000156"
+   },
+   {
+    "cod_ibge": 2211357,
+    "ente": "Várzea Branca",
+    "capital": "0  ",
+    "regiao": "NE",
+    "uf": "PI",
+    "esfera": "M",
+    "exercicio": 2026,
+    "populacao": 5181,
+    "cnpj": "41522103000107"
+   },
+   {
+    "cod_ibge": 2211407,
+    "ente": "Várzea Grande",
+    "capital": "0  ",
+    "regiao": "NE",
+    "uf": "PI",
+    "esfera": "M",
+    "exercicio": 2026,
+    "populacao": 4520,
+    "cnpj": "06554950000144"
+   },
+   {
+    "cod_ibge": 2211506,
+    "ente": "Vera Mendes",
+    "capital": "0  ",
+    "regiao": "NE",
+    "uf": "PI",
+    "esfera": "M",
+    "exercicio": 2026,
+    "populacao": 3282,
+    "cnpj": "01612615000131"
+   },
+   {
+    "cod_ibge": 2211605,
+    "ente": "Vila Nova do Piauí",
+    "capital": "0  ",
+    "regiao": "NE",
+    "uf": "PI",
+    "esfera": "M",
+    "exercicio": 2026,
+    "populacao": 2972,
+    "cnpj": "01612614000197"
+   },
+   {
+    "cod_ibge": 2211704,
+    "ente": "Wall Ferraz",
+    "capital": "0  ",
+    "regiao": "NE",
+    "uf": "PI",
+    "esfera": "M",
+    "exercicio": 2026,
+    "populacao": 4195,
+    "cnpj": "01612612000106"
+   },
+   {
+    "cod_ibge": 2300101,
+    "ente": "Abaiara",
+    "capital": "0  ",
+    "regiao": "NE",
+    "uf": "CE",
+    "esfera": "M",
+    "exercicio": 2026,
+    "populacao": 10269,
+    "cnpj": "07411531000116"
+   },
+   {
+    "cod_ibge": 2300150,
+    "ente": "Acarape",
+    "capital": "0  ",
+    "regiao": "NE",
+    "uf": "CE",
+    "esfera": "M",
+    "exercicio": 2026,
+    "populacao": 14340,
+    "cnpj": "23555170000138"
+   },
+   {
+    "cod_ibge": 2300200,
+    "ente": "Acaraú",
+    "capital": "0  ",
+    "regiao": "NE",
+    "uf": "CE",
+    "esfera": "M",
+    "exercicio": 2026,
+    "populacao": 69317,
+    "cnpj": "07547821000191"
+   },
+   {
+    "cod_ibge": 2300309,
+    "ente": "Acopiara",
+    "capital": "0  ",
+    "regiao": "NE",
+    "uf": "CE",
+    "esfera": "M",
+    "exercicio": 2026,
+    "populacao": 45937,
+    "cnpj": "07847379000119"
+   },
+   {
+    "cod_ibge": 2300408,
+    "ente": "Aiuaba",
+    "capital": "0  ",
+    "regiao": "NE",
+    "uf": "CE",
+    "esfera": "M",
+    "exercicio": 2026,
+    "populacao": 14115,
+    "cnpj": "07568231000145"
+   },
+   {
+    "cod_ibge": 2300507,
+    "ente": "Alcântaras",
+    "capital": "0  ",
+    "regiao": "NE",
+    "uf": "CE",
+    "esfera": "M",
+    "exercicio": 2026,
+    "populacao": 11795,
+    "cnpj": "07598626000190"
+   },
+   {
+    "cod_ibge": 3514908,
+    "ente": "Elias Fausto",
+    "capital": "0  ",
+    "regiao": "SE",
+    "uf": "SP",
+    "esfera": "M",
+    "exercicio": 2026,
+    "populacao": 18168,
+    "cnpj": "44723740000121"
+   },
+   {
+    "cod_ibge": 3514924,
+    "ente": "Elisiário",
+    "capital": "0  ",
+    "regiao": "SE",
+    "uf": "SP",
+    "esfera": "M",
+    "exercicio": 2026,
+    "populacao": 3190,
+    "cnpj": "65711723000144"
+   },
+   {
+    "cod_ibge": 3514957,
+    "ente": "Embaúba",
+    "capital": "0  ",
+    "regiao": "SE",
+    "uf": "SP",
+    "esfera": "M",
+    "exercicio": 2026,
+    "populacao": 2349,
+    "cnpj": "65712648000136"
+   },
+   {
+    "cod_ibge": 3515004,
+    "ente": "Embu das Artes",
+    "capital": "0  ",
+    "regiao": "SE",
+    "uf": "SP",
+    "esfera": "M",
+    "exercicio": 2026,
+    "populacao": 259788,
+    "cnpj": "46523114000117"
+   },
+   {
+    "cod_ibge": 3515103,
+    "ente": "Embu-Guaçu",
+    "capital": "0  ",
+    "regiao": "SE",
+    "uf": "SP",
+    "esfera": "M",
+    "exercicio": 2026,
+    "populacao": 68913,
+    "cnpj": "46523148000101"
+   }
+  ]
+ }
+}

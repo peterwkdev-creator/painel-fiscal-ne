@@ -1,0 +1,194 @@
+.bloco {
+  background: var(--superficie);
+  border: 1px solid var(--borda);
+  border-radius: var(--raio);
+  box-shadow: var(--sombra);
+  overflow: hidden;
+}
+
+.controles {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--e-4);
+  padding: var(--e-6);
+  border-bottom: 1px solid var(--borda);
+}
+
+.campo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--e-1);
+  font-size: var(--texto-xs);
+  font-weight: 600;
+  color: var(--tinta-suave);
+}
+
+.campo input,
+.campo select {
+  font: inherit;
+  font-size: var(--texto-sm);
+  font-weight: 400;
+  color: var(--tinta);
+  background: var(--fundo);
+  border: 1px solid var(--borda-forte);
+  border-radius: 6px;
+  padding: var(--e-2) var(--e-3);
+  min-width: 11rem;
+}
+
+.campo input:focus-visible,
+.campo select:focus-visible {
+  outline: 2px solid var(--acento);
+  outline-offset: 1px;
+}
+
+.caixa {
+  display: flex;
+  align-items: center;
+  gap: var(--e-2);
+  font-size: var(--texto-sm);
+  color: var(--tinta-suave);
+  padding-bottom: var(--e-2);
+}
+
+.contagem {
+  font-size: var(--texto-xs);
+  color: var(--tinta-fraca);
+  padding: var(--e-3) var(--e-6);
+  margin: 0;
+  border-bottom: 1px solid var(--borda);
+}
+
+/* A tabela rola dentro do próprio contêiner: a PÁGINA nunca rola na
+   horizontal, que é o que quebra a leitura no celular. */
+.rolagem {
+  overflow-x: auto;
+}
+
+.tabela {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--texto-sm);
+}
+
+.legenda {
+  text-align: left;
+  font-size: var(--texto-xs);
+  color: var(--tinta-fraca);
+  padding: var(--e-3) var(--e-6) 0;
+  caption-side: top;
+}
+
+.tabela th,
+.tabela td {
+  padding: var(--e-3) var(--e-4);
+  border-bottom: 1px solid var(--borda);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.tabela thead th {
+  position: sticky;
+  top: 0;
+  background: var(--superficie);
+  font-size: var(--texto-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--tinta-fraca);
+  border-bottom: 1px solid var(--borda-forte);
+}
+
+.tabela tbody tr:hover {
+  background: var(--acento-suave);
+}
+
+.nome {
+  font-weight: 600;
+  color: var(--tinta);
+  white-space: normal;
+  min-width: 12rem;
+}
+
+.num {
+  text-align: right;
+}
+
+.selo {
+  display: inline-block;
+  font-size: var(--texto-xs);
+  font-weight: 600;
+  border-radius: 999px;
+  padding: var(--e-1) var(--e-3);
+  white-space: nowrap;
+}
+
+/* Cor E rótulo, nunca cor sozinha. */
+
+/* Implausível não é "pior que acima do teto": é outra coisa. Cor diferente da
+   escala de alerta, para o leitor não ordenar os dois na mesma régua. */
+.implausivel {
+  color: #6d5a8a;
+}
+.selo.implausivel {
+  background: #f1eef7;
+  color: #4c3d66;
+}
+@media (prefers-color-scheme: dark) {
+  .implausivel {
+    color: #b9a5d6;
+  }
+  .selo.implausivel {
+    background: #241c31;
+    color: #cbbce2;
+  }
+}
+.acima-legal {
+  color: var(--alerta);
+}
+.selo.acima-legal {
+  background: var(--alerta-suave);
+}
+
+.acima-prudencial {
+  color: var(--atencao);
+}
+.selo.acima-prudencial {
+  background: var(--atencao-suave);
+}
+
+.abaixo {
+  color: var(--tinta);
+}
+.selo.abaixo {
+  background: var(--acento-suave);
+  color: var(--tinta-suave);
+}
+
+.sem-dado {
+  color: var(--ausente);
+}
+.selo.sem-dado {
+  background: var(--ausente-suave);
+}
+
+.vazio {
+  padding: var(--e-8) var(--e-6);
+  margin: 0;
+  color: var(--tinta-fraca);
+  font-size: var(--texto-sm);
+}
+
+@media (max-width: 40rem) {
+  .controles {
+    padding: var(--e-4);
+  }
+  .campo input,
+  .campo select {
+    min-width: 0;
+    width: 100%;
+  }
+  .campo {
+    flex: 1 1 100%;
+  }
+}

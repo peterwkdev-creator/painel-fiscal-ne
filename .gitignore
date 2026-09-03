@@ -1,0 +1,23 @@
+# A especificacao interna mora em `especs/painel-fiscal.md`, na raiz do
+# workspace. O git nao rastreia arquivo dentro de repositorio aninhado, nem
+# com `git add -f`. Medido em 02/09/2026, ao publicar o observatorio.
+
+# Dado acumulado da maquina, nao codigo. Quem clonar roda a propria coleta.
+*.db
+*.db-journal
+*.db-wal
+
+# Saida de execucao: uma varredura leva ~57 minutos e roda em segundo plano
+# com o stdout redirecionado. O log e do momento, nao do projeto.
+*.log
+
+# Credenciais (nao ha nenhuma hoje, e a regra vale desde ja).
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/

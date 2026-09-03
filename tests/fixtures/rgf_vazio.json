@@ -1,0 +1,24 @@
+{
+ "_origem": "Resposta REAL do SICONFI a uma consulta /rgf SEM id_ente, capturada em 03/09/2026. Devolve items:[] com HTTP 200 -- nao e erro e nao e zero: e ausencia. Esta e a armadilha central desta API.",
+ "resposta": {
+  "items": [],
+  "hasMore": false,
+  "limit": 5000,
+  "offset": 0,
+  "count": 0,
+  "links": [
+   {
+    "rel": "self",
+    "href": "https://host-5hrds-scan.prosubnet.vcndados.oraclevcn.com/ords/cdwhprd/siconfi/tt/rgf?an_exercicio=2024&in_periodicidade=Q&nr_periodo=3&co_tipo_demonstrativo=RGF&no_anexo=RGF-Anexo+01&co_esfera=M&co_poder=E"
+   },
+   {
+    "rel": "describedby",
+    "href": "https://host-5hrds-scan.prosubnet.vcndados.oraclevcn.com/ords/cdwhprd/siconfi/metadata-catalog/tt/item"
+   },
+   {
+    "rel": "first",
+    "href": "https://host-5hrds-scan.prosubnet.vcndados.oraclevcn.com/ords/cdwhprd/siconfi/tt/rgf?an_exercicio=2024&in_periodicidade=Q&nr_periodo=3&co_tipo_demonstrativo=RGF&no_anexo=RGF-Anexo+01&co_esfera=M&co_poder=E"
+   }
+  ]
+ }
+}
