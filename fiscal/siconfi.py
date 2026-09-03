@@ -307,3 +307,120 @@ def pessoal(
         percentual=_linha(itens, CONTA_PESSOAL, COLUNA_PERCENTUAL),
         limite_prudencial=_linha(itens, CONTA_PRUDENCIAL, COLUNA_PERCENTUAL),
     )
+
+# ---------------------------------------------------------------- despesa por função
+
+# As 28 funções orçamentárias da Portaria MOG 42/1999. É lista **fechada e
+# legal**, não inferência: o anexo não traz hierarquia utilizável (`cod_conta`
+# tem dois valores para 1.464 linhas), então o que separa função de subfunção é
+# o nome estar aqui. Subfunção fica de fora -- somá-la duplicaria tudo.
+FUNCOES: tuple[str, ...] = (
+    "Legislativa", "Judiciária", "Essencial à Justiça", "Administração",
+    "Defesa Nacional", "Segurança Pública", "Relações Exteriores",
+    "Assistência Social", "Previdência Social", "Saúde", "Trabalho",
+    "Educação", "Cultura", "Direitos da Cidadania", "Urbanismo", "Habitação",
+    "Saneamento", "Gestão Ambiental", "Ciência e Tecnologia", "Agricultura",
+    "Organização Agrária", "Indústria", "Comércio e Serviços", "Comunicações",
+    "Energia", "Transporte", "Desporto e Lazer", "Encargos Especiais",
+)
+
+# **Liquidada, não empenhada nem orçada.** Empenhada é dinheiro reservado;
+# dotação é intenção. Liquidada é a despesa que o município reconhece como
+# efetivamente realizada -- a única que responde "quanto gastou".
+COLUNA_LIQUIDADA = "DESPESAS LIQUIDADAS ATÉ O BIMESTRE (d)"
+
+# **Cada função aparece DUAS vezes**, sob dois rótulos: uma no total geral e
+# outra em "Intra-Orçamentárias", que são transferências entre órgãos do mesmo
+# governo. Ler sem filtrar o rótulo pega a segunda e publica número **vinte
+# vezes menor**: Salvador/BA 2024 marcaria R$ 137 milhões em Saúde no lugar de
+# R$ 2,86 bilhões. Descoberto em 03/09/2026, antes de ingerir.
+ROTULO_EXCETO_INTRA = "Total das Despesas Exceto Intra-Orçamentárias"
+CONTA_TOTAL_DESPESAS = "DESPESAS (EXCETO INTRA-ORÇAMENTÁRIAS)"
+
+
+@dataclass(frozen=True)
+class Funcoes:
+    """A despesa liquidada por função, e o total que o próprio anexo declara.
+
+    O total existe para **conferir**: a soma das funções tem de fechar com ele.
+    É uma integridade que a fonte oferece de graça, e mais forte que a do RGF --
+    ali só dá para comparar razão contra razão; aqui, parte contra todo.
+    """
+
+    codigo_ibge: int
+    exercicio: int
+    periodo: int
+    total: float | None
+    valores: dict[str, float]
+
+    @property
+    def soma(self) -> float:
+        return sum(self.valores.values())
+
+    @property
+    def fecha(self) -> bool | None:
+        """`None` sem total -- ausência de régua não é aprovação."""
+        if self.total is None or not self.valores:
+            return None
+        return abs(self.soma - self.total) <= max(1.0, abs(self.total) * 1e-9)
+
+
+def url_rreo(exercicio: int, periodo: int, codigo_ibge: int) -> str:
+    """RREO Anexo 02 (despesa por função) de um ente.
+
+    O RREO é **bimestral** -- `nr_periodo` de 1 a 6 --, enquanto o RGF é
+    quadrimestral de 1 a 3. Confundir os dois devolve vazio sem dizer por quê.
+    """
+    if not 1 <= periodo <= 6:
+        raise ValueError(f"bimestre fora de 1..6: {periodo!r}")
+    q = urllib.parse.urlencode({
+        "an_exercicio": exercicio,
+        "nr_periodo": periodo,
+        "co_tipo_demonstrativo": "RREO",
+        "no_anexo": "RREO-Anexo 02",
+        "co_esfera": "M",
+        "id_ente": codigo_ibge,
+    })
+    return f"{BASE}/rreo?{q}"
+
+
+def _valor_de(itens: list[dict], conta: str) -> float | None:
+    for x in itens:
+        if (x.get("coluna") == COLUNA_LIQUIDADA
+                and x.get("rotulo") == ROTULO_EXCETO_INTRA
+                and (x.get("conta") or "").strip() == conta):
+            return _numero(x.get("valor"))
+    return None
+
+
+def funcoes(
+    codigo_ibge: int,
+    exercicio: int,
+    periodo: int,
+    transporte: Transporte,
+    *,
+    dormir: Dormir = time.sleep,
+) -> Funcoes | None:
+    """A despesa por função de um ente, ou `None` se ele não publicou."""
+    d = buscar(
+        url_rreo(exercicio, periodo, codigo_ibge),
+        f"o RREO de {codigo_ibge} em {exercicio}/{periodo}",
+        transporte,
+        dormir=dormir,
+    )
+    itens = d["items"]
+    if not itens:
+        return None
+    valores = {}
+    for f in FUNCOES:
+        v = _valor_de(itens, f)
+        if v is not None:
+            valores[f] = v
+    total = next(
+        (_numero(x.get("valor")) for x in itens
+         if x.get("coluna") == COLUNA_LIQUIDADA
+         and x.get("rotulo") == ROTULO_EXCETO_INTRA
+         and CONTA_TOTAL_DESPESAS in (x.get("conta") or "")),
+        None,
+    )
+    return Funcoes(codigo_ibge, exercicio, periodo, total, valores)

@@ -16,7 +16,7 @@ import time
 from . import armazem
 from .siconfi import (
     NORDESTE, PAUSA_PADRAO, Dormir, ErroSiconfi, Transporte,
-    entes, pessoal, transporte_http,
+    entes, funcoes, pessoal, transporte_http,
 )
 
 BANCO_PADRAO = os.environ.get("PAINEL_FISCAL_BANCO", "painel.db")
@@ -139,6 +139,82 @@ def cmd_listar(args, *_) -> int:
               f"  (limite {_br(l['limite_prudencial'], 2, '%')})"
               f"  R$ {_br(l['despesa'])}")
     print(f"\nFonte: {armazem.FONTE}. Coleta em {linhas[0]['coletado_em'][:10]}.")
+    return 0
+
+
+def cmd_ingerir_funcoes(args, transporte: Transporte, dormir: Dormir) -> int:
+    """Varre a despesa por função (RREO Anexo 02). Mesmo desenho do `ingerir`.
+
+    O RREO é **bimestral**: `--periodo` vai de 1 a 6, não de 1 a 3 como o RGF.
+    """
+    with armazem.abrir(args.banco) as con:
+        alvos = [r[0] for r in con.execute(
+            "SELECT codigo_ibge FROM ente WHERE esfera='M' ORDER BY codigo_ibge")]
+        feitos = set() if args.recomecar else armazem.ja_consultados_funcoes(
+            con, args.exercicio, args.periodo)
+    if not alvos:
+        print("Nenhum ente no banco. Rode `ingerir-entes` primeiro.", file=sys.stderr)
+        return 2
+
+    pendentes = [c for c in alvos if c not in feitos]
+    print(f"{len(alvos)} municípios; {len(feitos)} já consultados; "
+          f"{len(pendentes)} pendentes em {args.exercicio}/{args.periodo} (bimestre).")
+    if args.limite:
+        pendentes = pendentes[:args.limite]
+        print(f"  limitado a {len(pendentes)} nesta execução.")
+
+    lidos = publicaram = nao_fecham = 0
+    falha: str | None = None
+    with armazem.abrir(args.banco) as con:
+        coleta = armazem.abrir_coleta(con, args.exercicio, args.periodo)
+    try:
+        for codigo in pendentes:
+            f = funcoes(codigo, args.exercicio, args.periodo, transporte, dormir=dormir)
+            with armazem.abrir(args.banco) as con:
+                armazem.gravar_funcoes(con, codigo, args.exercicio, args.periodo, f)
+            lidos += 1
+            if f:
+                publicaram += 1
+                if f.fecha is False:
+                    nao_fecham += 1
+            if lidos % 50 == 0:
+                print(f"  ... {lidos} lidos, {publicaram} publicaram, "
+                      f"{nao_fecham} não fecham")
+            dormir(args.pausa)
+    except (Exception, KeyboardInterrupt) as e:
+        falha = f"{type(e).__name__}: {e}"
+        print(f"\n>>> interrompida: {falha}", file=sys.stderr)
+        print(f">>> {lidos} municípios gravados; rodar de novo continua daqui.",
+              file=sys.stderr)
+    finally:
+        with armazem.abrir(args.banco) as con:
+            armazem.fechar_coleta(con, coleta, lidos, publicaram, falha)
+    print(f"{lidos} lidos, {publicaram} publicaram, {nao_fecham} com soma que "
+          f"não fecha com o total declarado.")
+    return 1 if falha else 0
+
+
+def cmd_funcoes(args, *_) -> int:
+    """O que os municípios gastam por função, e quantos relatórios não fecham."""
+    with armazem.abrir(args.banco) as con:
+        cob = con.execute(
+            "SELECT COUNT(*) t, SUM(publicou) p, SUM(CASE WHEN fecha=0 THEN 1 ELSE 0 END) nf"
+            "  FROM funcao_consulta WHERE exercicio=? AND periodo=?",
+            (args.exercicio, args.periodo)).fetchone()
+        if not cob["t"]:
+            print("Nada coletado nesse período ainda.")
+            return 0
+        print(f"{args.exercicio}/{args.periodo}: {cob['t']} consultados, "
+              f"{cob['p']} publicaram, {cob['nf']} com soma que não fecha.\n")
+        for l in con.execute(
+            "SELECT funcao, COUNT(*) n, SUM(valor) soma,"
+            "       AVG(valor * 100.0 / NULLIF(total_declarado,0)) media_pct"
+            "  FROM despesa_funcao WHERE exercicio=? AND periodo=? AND valor IS NOT NULL"
+            " GROUP BY funcao ORDER BY soma DESC LIMIT ?",
+                (args.exercicio, args.periodo, args.limite)):
+            print(f"  {l['funcao']:24} R$ {_br(l['soma']):>20}   "
+                  f"média {_br(l['media_pct'], 1, '%'):>7} do orçamento   "
+                  f"({l['n']} municípios)")
     return 0
 
 
@@ -292,6 +368,19 @@ def montar() -> argparse.ArgumentParser:
 
     sub.add_parser("ingerir-entes", help="a lista de municípios do NE (1 requisição)")
 
+    # O RREO e bimestral (1..6); o RGF e quadrimestral (1..3). Sao subcomandos
+    # separados de proposito: um `--periodo 6` no comando errado devolve vazio
+    # sem dizer por que, e a mensagem que falta e "voce usou a escala errada".
+    for nome, ajuda in (("ingerir-funcoes", "varre a despesa por função (bimestral)"),
+                        ("funcoes", "o que se gasta por função")):
+        s = sub.add_parser(nome, help=ajuda)
+        s.add_argument("--exercicio", type=int, default=2024)
+        s.add_argument("--periodo", type=int, default=6, choices=(1, 2, 3, 4, 5, 6))
+        s.add_argument("--limite", type=int, default=0 if nome == "ingerir-funcoes" else 12)
+        if nome == "ingerir-funcoes":
+            s.add_argument("--pausa", type=float, default=PAUSA_PADRAO)
+            s.add_argument("--recomecar", action="store_true")
+
     for nome, ajuda in (("ingerir", "varre o RGF, retomável"),
                         ("resumo", "contagem e média por UF"),
                         ("listar", "os maiores percentuais"),
@@ -323,7 +412,8 @@ def principal(argv=None, transporte: Transporte | None = None,
     t = transporte or transporte_http()
     fn = {"ingerir-entes": cmd_ingerir_entes, "ingerir": cmd_ingerir,
           "resumo": cmd_resumo, "listar": cmd_listar,
-          "conferir": cmd_conferir, "exportar": cmd_exportar}[args.comando]
+          "conferir": cmd_conferir, "exportar": cmd_exportar,
+          "ingerir-funcoes": cmd_ingerir_funcoes, "funcoes": cmd_funcoes}[args.comando]
     try:
         return fn(args, t, dormir)
     except ErroSiconfi as e:

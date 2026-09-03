@@ -46,6 +46,34 @@ CREATE TABLE IF NOT EXISTS pessoal (
     PRIMARY KEY (codigo_ibge, exercicio, periodo)
 );
 
+-- Despesa liquidada por funcao orcamentaria (RREO Anexo 02). Uma linha por
+-- ente/exercicio/bimestre/funcao. `total_declarado` repete em todas as linhas
+-- do mesmo relatorio de proposito: e a regua contra a qual a soma se confere,
+-- e guarda-la junto evita depender de uma segunda consulta para verificar.
+CREATE TABLE IF NOT EXISTS despesa_funcao (
+    codigo_ibge     INTEGER NOT NULL,
+    exercicio       INTEGER NOT NULL,
+    periodo         INTEGER NOT NULL,
+    funcao          TEXT    NOT NULL,
+    valor           REAL,
+    total_declarado REAL,
+    fonte           TEXT NOT NULL,
+    coletado_em     TEXT NOT NULL,
+    PRIMARY KEY (codigo_ibge, exercicio, periodo, funcao)
+);
+
+-- Quem foi consultado para funcoes, inclusive quem nao publicou. Sem isto a
+-- retomada perguntaria de novo, para sempre, a todo municipio sem relatorio.
+CREATE TABLE IF NOT EXISTS funcao_consulta (
+    codigo_ibge INTEGER NOT NULL,
+    exercicio   INTEGER NOT NULL,
+    periodo     INTEGER NOT NULL,
+    publicou    INTEGER NOT NULL,
+    fecha       INTEGER,
+    coletado_em TEXT NOT NULL,
+    PRIMARY KEY (codigo_ibge, exercicio, periodo)
+);
+
 -- Marca de progresso: e o que torna a varredura retomavel sem reler o que ja
 -- veio. Uma hora de rede e tempo de sobra para algo dar errado.
 CREATE TABLE IF NOT EXISTS coleta (
@@ -60,6 +88,7 @@ CREATE TABLE IF NOT EXISTS coleta (
 """
 
 FONTE = "SICONFI/Tesouro Nacional — RGF Anexo 01"
+FONTE_FUNCOES = "SICONFI/Tesouro Nacional — RREO Anexo 02"
 
 
 def agora() -> str:
@@ -143,3 +172,38 @@ def fechar_coleta(con: sqlite3.Connection, rowid: int, lidos: int,
         "UPDATE coleta SET terminada_em=?, lidos=?, publicaram=?, falhou_com=?"
         " WHERE rowid=?",
         (agora(), lidos, publicaram, falhou_com, rowid))
+
+
+def gravar_funcoes(con: sqlite3.Connection, codigo_ibge: int, exercicio: int,
+                   periodo: int, f) -> None:
+    """Grava a despesa por função -- e grava também quando não houve nenhuma.
+
+    `f is None` significa "consultado, não publicou". Sem registrar isso, a
+    retomada perguntaria de novo a cada execução a todo município sem relatório.
+    """
+    agora_ = agora()
+    con.execute(
+        "INSERT INTO funcao_consulta (codigo_ibge, exercicio, periodo, publicou,"
+        " fecha, coletado_em) VALUES (?,?,?,?,?,?)"
+        " ON CONFLICT(codigo_ibge, exercicio, periodo) DO UPDATE SET"
+        "   publicou=excluded.publicou, fecha=excluded.fecha,"
+        "   coletado_em=excluded.coletado_em",
+        (codigo_ibge, exercicio, periodo, 1 if f else 0,
+         None if (f is None or f.fecha is None) else int(f.fecha), agora_))
+    if not f:
+        return
+    con.executemany(
+        "INSERT INTO despesa_funcao (codigo_ibge, exercicio, periodo, funcao,"
+        " valor, total_declarado, fonte, coletado_em) VALUES (?,?,?,?,?,?,?,?)"
+        " ON CONFLICT(codigo_ibge, exercicio, periodo, funcao) DO UPDATE SET"
+        "   valor=excluded.valor, total_declarado=excluded.total_declarado,"
+        "   fonte=excluded.fonte, coletado_em=excluded.coletado_em",
+        [(codigo_ibge, exercicio, periodo, nome, valor, f.total,
+          FONTE_FUNCOES, agora_) for nome, valor in f.valores.items()])
+
+
+def ja_consultados_funcoes(con: sqlite3.Connection, exercicio: int,
+                           periodo: int) -> set[int]:
+    return {r[0] for r in con.execute(
+        "SELECT codigo_ibge FROM funcao_consulta WHERE exercicio=? AND periodo=?",
+        (exercicio, periodo))}
