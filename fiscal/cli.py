@@ -272,6 +272,66 @@ def cmd_conferir(args, *_) -> int:
     return 0
 
 
+def _bloco_funcoes(con) -> dict | None:
+    """A despesa por função, do bimestre mais recente já coletado.
+
+    **O período não vem de `--periodo`, e isso é deliberado.** O RREO é
+    bimestral (1..6) e o RGF é quadrimestral (1..3): um `--periodo 3` significa
+    coisas diferentes nos dois, e passar o do RGF aqui devolveria silenciosamente
+    o terceiro bimestre em vez do que se pediu. O último coletado é a única
+    resposta que não depende de quem digitou o comando.
+
+    Formato esparso: cada município declara ~14 das 28 funções, e emitir as 28
+    com `null` nas outras dobraria o arquivo para não dizer nada. Os rótulos
+    saem uma vez só, ordenados pela soma no Nordeste — assim os índices mais
+    usados são os menores, e Educação é sempre `0`.
+    """
+    ultimo = con.execute(
+        "SELECT exercicio, periodo FROM funcao_consulta"
+        " ORDER BY exercicio DESC, periodo DESC LIMIT 1").fetchone()
+    if ultimo is None:
+        return None
+    ex, pe = ultimo["exercicio"], ultimo["periodo"]
+
+    cob = con.execute(
+        "SELECT COUNT(*) t, SUM(publicou) p,"
+        "       SUM(CASE WHEN fecha=0 THEN 1 ELSE 0 END) nf"
+        "  FROM funcao_consulta WHERE exercicio=? AND periodo=?",
+        (ex, pe)).fetchone()
+    rotulos = [r[0] for r in con.execute(
+        "SELECT funcao FROM despesa_funcao"
+        " WHERE exercicio=? AND periodo=? AND valor IS NOT NULL"
+        " GROUP BY funcao ORDER BY SUM(valor) DESC", (ex, pe))]
+    indice = {nome: i for i, nome in enumerate(rotulos)}
+
+    por_municipio: dict[str, list] = {}
+    for r in con.execute(
+        "SELECT codigo_ibge, funcao, valor, total_declarado FROM despesa_funcao"
+        " WHERE exercicio=? AND periodo=? AND valor IS NOT NULL"
+        " ORDER BY codigo_ibge, valor DESC", (ex, pe)):
+        # Centavos num orçamento municipal são ruído, e cada casa decimal
+        # custa bytes em 19.500 valores. O total vem da mesma linha, arredondado
+        # do mesmo jeito, para que a soma continue conferindo contra ele.
+        entrada = por_municipio.setdefault(
+            str(r["codigo_ibge"]),
+            [None if r["total_declarado"] is None else round(r["total_declarado"]), []])
+        entrada[1].append([indice[r["funcao"]], round(r["valor"])])
+
+    return {
+        "exercicio": ex,
+        "periodo": pe,
+        "fonte": armazem.FONTE_FUNCOES,
+        "coletadoEm": con.execute(
+            "SELECT MAX(coletado_em) FROM funcao_consulta"
+            " WHERE exercicio=? AND periodo=?", (ex, pe)).fetchone()[0],
+        "cobertura": {"consultados": cob["t"], "publicaram": cob["p"] or 0,
+                      "naoFecham": cob["nf"] or 0},
+        "rotulos": rotulos,
+        "colunasMunicipio": ["total", "valores"],
+        "porMunicipio": por_municipio,
+    }
+
+
 def cmd_exportar(args, *_) -> int:
     """Gera o snapshot que o painel lê no build.
 
@@ -309,6 +369,7 @@ def cmd_exportar(args, *_) -> int:
             " ORDER BY codigo_ibge, exercicio, periodo"):
             serie.setdefault(str(r["codigo_ibge"]), []).append(
                 [r["exercicio"], r["periodo"], bool(r["publicou"]), r["percentual"]])
+        bloco_funcoes = _bloco_funcoes(con)
 
     consultados = sum(1 for l in linhas if l["publicou"] is not None)
     publicaram = sum(1 for l in linhas if l["publicou"] == 1)
@@ -349,6 +410,10 @@ def cmd_exportar(args, *_) -> int:
         "colunasSerie": ["exercicio", "periodo", "publicou", "percentual"],
         "serie": serie,
         "periodos": periodos,
+        # `null` enquanto nenhuma varredura de funções tiver rodado -- a chave
+        # existe sempre, porque o TypeScript do outro lado declara o campo e o
+        # teste de contrato compara os dois conjuntos de chaves.
+        "funcoes": bloco_funcoes,
     }
     destino = Path(args.saida)
     destino.parent.mkdir(parents=True, exist_ok=True)
@@ -358,6 +423,12 @@ def cmd_exportar(args, *_) -> int:
     print(f"{len(linhas)} municípios em {destino} ({kb} KB). "
           f"{publicaram} publicaram, {consultados - publicaram} não publicaram, "
           f"{universo - consultados} ainda não consultados.")
+    if snapshot["funcoes"]:
+        f = snapshot["funcoes"]
+        print(f"  despesa por função de {f['exercicio']}/{f['periodo']}: "
+              f"{len(f['porMunicipio'])} municípios, {len(f['rotulos'])} funções.")
+    else:
+        print("  sem despesa por função: rode `ingerir-funcoes`.")
     return 0
 
 

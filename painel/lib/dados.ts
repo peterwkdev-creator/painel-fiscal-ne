@@ -57,7 +57,61 @@ export interface Snapshot {
   serie: Record<string, PontoSerie[]>;
   /** Todos os períodos coletados, em ordem: `[[2024,1],[2024,2],[2024,3]]`. */
   periodos: [exercicio: number, periodo: number][];
+  /**
+   * A despesa liquidada por função orçamentária (RREO Anexo 02).
+   *
+   * `null` enquanto a varredura de funções não tiver rodado. A chave existe
+   * sempre — é o que o teste de contrato do lado Python compara.
+   */
+  funcoes: Funcoes | null;
 }
+
+/**
+ * O que o município gasta por função: educação, saúde, urbanismo, os 28 nomes
+ * da Portaria MOG 42/1999.
+ *
+ * O percentual com pessoal responde "cabe no limite?". Esta é a outra pergunta,
+ * a que ninguém consegue responder olhando um percentual: **para onde vai o
+ * dinheiro?**
+ *
+ * ## Por que esparso
+ *
+ * Cada município declara cerca de 14 das 28 funções. Emitir as 28 com `null`
+ * nas outras dobraria o arquivo para não dizer nada. Os rótulos saem uma vez
+ * só, e cada valor carrega o **índice** nesse array — ordenado pela soma no
+ * Nordeste, de modo que Educação é sempre `0`.
+ *
+ * ## A armadilha intra-orçamentária
+ *
+ * No relatório de origem cada função aparece **duas vezes**: uma no total e
+ * outra em "Intra-Orçamentárias" (transferências entre órgãos do próprio
+ * município). Somar as duas conta o mesmo gasto duplicado. O motor Python já
+ * filtra na leitura — Salvador em saúde é R$ 2,86 bi, e não os R$ 137 mi que a
+ * leitura ingênua devolve.
+ */
+export interface Funcoes {
+  exercicio: number;
+  /** **Bimestre** (1..6), não quadrimestre — o RREO não usa a escala do RGF. */
+  periodo: number;
+  fonte: string;
+  coletadoEm: string | null;
+  cobertura: { consultados: number; publicaram: number; naoFecham: number };
+  /** Os nomes das funções, ordenados pela soma no Nordeste. */
+  rotulos: string[];
+  /** Ordem dos campos de cada entrada de `porMunicipio`. */
+  colunasMunicipio: string[];
+  /**
+   * Por código IBGE: `{ "2927408": [totalDeclarado, [[indice, valor], ...]] }`.
+   * Valores em reais inteiros — centavos num orçamento municipal são ruído, e
+   * cada casa decimal custa bytes em 19.500 valores.
+   */
+  porMunicipio: Record<string, EntradaFuncoes>;
+}
+
+export type EntradaFuncoes = [
+  total: number | null,
+  valores: [indice: number, valor: number][],
+];
 
 /** Um ponto da série: exercício, quadrimestre, publicou, percentual. */
 export type PontoSerie = [

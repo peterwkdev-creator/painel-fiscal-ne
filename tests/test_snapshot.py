@@ -18,8 +18,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from fiscal.armazem import abrir, gravar_entes, gravar_pessoal
-from fiscal.siconfi import Ente, Pessoal
+from fiscal.armazem import abrir, gravar_entes, gravar_funcoes, gravar_pessoal
+from fiscal.siconfi import Ente, Funcoes, Pessoal
 
 RAIZ = Path(__file__).resolve().parent.parent
 DADOS_TS = RAIZ / "painel" / "lib" / "dados.ts"
@@ -126,6 +126,86 @@ class OQueOSnapshotPromete(unittest.TestCase):
     def test_a_diferenca_para_o_ibge_e_exibida_nao_escondida(self):
         self.assertEqual(
             self.snapshot["cobertura"]["municipiosIbgeNoNordeste"], 1794)
+
+
+class DespesaPorFuncaoNoSnapshot(unittest.TestCase):
+    """O bloco `funcoes`: formato esparso, escala do período, e o total como régua.
+
+    Vive num banco próprio porque a fixture de cima **não** tem funções — e é
+    ela que prova a outra metade do contrato: sem varredura, `funcoes` é `null`
+    e a chave continua existindo.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.dir = tempfile.TemporaryDirectory()
+        banco = str(Path(cls.dir.name) / "f.db")
+        saida = Path(cls.dir.name) / "snapshot.json"
+        with abrir(banco) as con:
+            gravar_entes(con, [
+                Ente(2927408, "Salvador", "BA", "NE", "M", 2610987, "1"),
+                Ente(2507507, "João Pessoa", "PB", "NE", "M", 833932, "2"),
+                Ente(2111300, "São Luís", "MA", "NE", "M", 1037775, "3"),
+            ])
+            # Bimestre 5 e bimestre 6 do mesmo exercício: o export tem de pegar
+            # o 6, o mais recente, e não o que `--periodo` disser.
+            gravar_funcoes(con, 2927408, 2024, 5, Funcoes(
+                2927408, 2024, 5, 100.0, {"Saúde": 60.0, "Educação": 40.0}))
+            gravar_funcoes(con, 2927408, 2024, 6, Funcoes(
+                2927408, 2024, 6, 300.0, {"Educação": 200.0, "Saúde": 100.0}))
+            gravar_funcoes(con, 2507507, 2024, 6, Funcoes(
+                2507507, 2024, 6, 150.0, {"Saúde": 90.0, "Urbanismo": 60.0}))
+            gravar_funcoes(con, 2111300, 2024, 6, None)   # consultado, não publicou
+        subprocess.run(
+            [sys.executable, "-m", "fiscal", "--banco", banco, "exportar",
+             "--exercicio", "2024", "--periodo", "3", "--saida", str(saida)],
+            cwd=RAIZ, check=True, capture_output=True)
+        cls.f = json.loads(saida.read_text(encoding="utf-8"))["funcoes"]
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.dir.cleanup()
+
+    def test_o_periodo_vem_do_banco_e_nao_do_argumento(self):
+        """`--periodo 3` era quadrimestre do RGF; aqui a escala é outra.
+
+        Se o export lesse o argumento, este teste devolveria o 3º bimestre —
+        que não existe no banco — em vez do 6º. As duas escalas coexistem no
+        mesmo número e é exatamente aí que o erro passa despercebido.
+        """
+        self.assertEqual((self.f["exercicio"], self.f["periodo"]), (2024, 6))
+
+    def test_os_rotulos_saem_ordenados_pela_soma_no_nordeste(self):
+        # Educação 200, Saúde 190, Urbanismo 60 -- somando os dois municípios.
+        self.assertEqual(self.f["rotulos"], ["Educação", "Saúde", "Urbanismo"])
+
+    def test_quem_nao_publicou_fica_fora_do_mapa_mas_conta_na_cobertura(self):
+        self.assertNotIn("2111300", self.f["porMunicipio"])
+        self.assertEqual(self.f["cobertura"],
+                         {"consultados": 3, "publicaram": 2, "naoFecham": 0})
+
+    def test_o_valor_e_endereçado_por_indice_no_array_de_rotulos(self):
+        total, valores = self.f["porMunicipio"]["2507507"]
+        self.assertEqual(total, 150)
+        nomes = {self.f["rotulos"][i]: v for i, v in valores}
+        self.assertEqual(nomes, {"Saúde": 90, "Urbanismo": 60})
+
+    def test_a_soma_das_partes_fecha_com_o_total_declarado(self):
+        """A garantia que a fonte oferece de graça — e que o arredondamento
+        para reais inteiros não pode estragar."""
+        for codigo, (total, valores) in self.f["porMunicipio"].items():
+            self.assertEqual(sum(v for _, v in valores), total,
+                             f"a soma não fecha em {codigo}")
+
+    def test_o_bimestre_anterior_nao_vaza_para_dentro_do_atual(self):
+        """Salvador declarou os dois bimestres. Misturá-los somaria o mesmo
+        gasto duas vezes, e o total declarado deixaria de conferir."""
+        total, valores = self.f["porMunicipio"]["2927408"]
+        self.assertEqual(total, 300)
+        self.assertEqual(len(valores), 2)
+
+    def test_sem_varredura_a_chave_existe_e_vale_null(self):
+        self.assertIsNone(ContratoEntreLinguagens.snapshot["funcoes"])
 
 
 if __name__ == "__main__":
