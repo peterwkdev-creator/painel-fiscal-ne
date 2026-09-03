@@ -11,8 +11,10 @@ by the National Treasury through SICONFI — but it arrives **one municipality p
 request**, in 200+ lines of chart-of-accounts per query, with no comparison and
 no reading. In practice nobody looks.
 
-> **Status: ingestion and panel both build; the full regional sweep is still
-> running.** Everything below runs against the live API today.
+> **Status: the full Northeast sweep is complete.** 1,793 municipalities
+> consulted, 1,414 filed their report, 379 did not — and the consistency check
+> finds zero divergences across all 1,414. Everything below runs against the
+> live API today.
 
 ## Run it
 
@@ -106,18 +108,24 @@ login.
 
 ## First real numbers
 
-From the live API on 2026-09-03, for 2024's third quarter, in the first 25
-municipalities of Maranhão by IBGE code:
+The complete sweep of 2024's third quarter, all 1,793 municipalities:
 
-- **9 of 25 had filed at all.** A spot check of one non-filer returned empty
-  across four different periods and every parameter combination, while a control
-  query for Salvador returned 225 rows — the absence is real, not a query
-  artifact.
-- **4 of those 9 were over the 51.3% prudential threshold**, and
-  **Alto Parnaíba/MA at 57.52% was over the 54% legal cap itself.**
+| | |
+|---|---|
+| Filed a report | **1,414** |
+| **Did not file at all** | **379** (21%) |
+| Over the 54% legal cap | **198** |
+| Over the 51.3% prudential threshold | 182 |
+| Average of the plausible filings | 47.22% |
 
-That ratio comes from one state's alphabetical head, not a regional sample.
-Establishing the real figure for all 1,793 is what the full sweep is for.
+**Sergipe averages 51.97% across the whole state** — the state mean sits above
+the prudential threshold. Among municipalities over 200,000 people: Lauro de
+Freitas/BA 70.25%, Imperatriz/MA 60.64%, Paulista/PE 55.30%.
+
+One in five municipalities did not file at all. A spot check of one non-filer
+returned empty across four different periods and every parameter combination,
+while a control query for Salvador returned 225 rows — the absence is real, not
+a query artifact.
 
 ## License
 
