@@ -40,7 +40,32 @@ export interface Snapshot {
   };
   colunas: string[];
   municipios: LinhaMunicipio[];
+  /** Ordem dos campos em cada ponto de `serie`. */
+  colunasSerie: string[];
+  /**
+   * A série histórica por código IBGE: `{ "2927408": [[2024,2,true,33.22], ...] }`.
+   *
+   * Fica separada da tupla de `municipios` de propósito. Um número sozinho não
+   * diz se o município está melhorando ou piorando — e é essa a pergunta que a
+   * foto esconde. Entre 2024/2 e 2024/3, Salvador caiu de 33,22% para 32,37% e
+   * Imperatriz subiu de 57,63% para 60,64%: mesma "situação" no cartão, dois
+   * movimentos opostos.
+   *
+   * Só municípios que publicaram aparecem aqui; ausência já é dita pelo campo
+   * `publicou` do período em destaque.
+   */
+  serie: Record<string, PontoSerie[]>;
+  /** Todos os períodos coletados, em ordem: `[[2024,1],[2024,2],[2024,3]]`. */
+  periodos: [exercicio: number, periodo: number][];
 }
+
+/** Um ponto da série: exercício, quadrimestre, publicou, percentual. */
+export type PontoSerie = [
+  exercicio: number,
+  periodo: number,
+  publicou: boolean,
+  percentual: number,
+];
 
 export interface Municipio {
   codigo: number;

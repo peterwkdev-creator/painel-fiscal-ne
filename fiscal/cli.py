@@ -220,6 +220,19 @@ def cmd_exportar(args, *_) -> int:
         coleta = con.execute(
             "SELECT MAX(coletado_em) FROM pessoal WHERE exercicio=? AND periodo=?",
             (args.exercicio, args.periodo)).fetchone()[0]
+        periodos = [[r[0], r[1]] for r in con.execute(
+            "SELECT DISTINCT exercicio, periodo FROM pessoal"
+            " ORDER BY exercicio, periodo")]
+        # Só quem publicou entra na série: "não entregou" já é dito pelo campo
+        # `publicou` do período em destaque, e repetir a ausência em cada ponto
+        # da série inflaria o arquivo sem acrescentar informação.
+        serie: dict[str, list] = {}
+        for r in con.execute(
+            "SELECT codigo_ibge, exercicio, periodo, publicou, percentual"
+            "  FROM pessoal WHERE percentual IS NOT NULL"
+            " ORDER BY codigo_ibge, exercicio, periodo"):
+            serie.setdefault(str(r["codigo_ibge"]), []).append(
+                [r["exercicio"], r["periodo"], bool(r["publicou"]), r["percentual"]])
 
     consultados = sum(1 for l in linhas if l["publicou"] is not None)
     publicaram = sum(1 for l in linhas if l["publicou"] == 1)
@@ -248,6 +261,18 @@ def cmd_exportar(args, *_) -> int:
              l["rcl_ajustada"]]
             for l in linhas
         ],
+        # A série histórica de TODOS os períodos já coletados, separada dos
+        # campos do período em destaque. Um número sozinho não diz se o
+        # município está melhorando ou piorando -- e essa é justamente a
+        # pergunta que a foto esconde. Entre 2024/2 e 2024/3, 45 municípios
+        # saíram de cima do teto legal; sem série, isso é invisível.
+        #
+        # Fica em objeto separado, e não como coluna nova, porque a tupla
+        # posicional de `municipios` é contrato com o TypeScript: acrescentar
+        # um array lá dentro complicaria o tipo sem ganhar nada.
+        "colunasSerie": ["exercicio", "periodo", "publicou", "percentual"],
+        "serie": serie,
+        "periodos": periodos,
     }
     destino = Path(args.saida)
     destino.parent.mkdir(parents=True, exist_ok=True)
