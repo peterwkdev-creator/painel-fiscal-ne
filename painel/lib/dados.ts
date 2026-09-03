@@ -109,19 +109,28 @@ export type Faixa =
   | "sem-dado";
 
 /**
- * Acima disto o número deixa de ser alarmante e passa a ser impossível.
+ * A faixa do plausivel: **entre 0 e 100%**.
  *
- * Gastar mais com pessoal do que TODA a receita corrente líquida não descreve
- * um município em crise: descreve um formulário preenchido errado. Seis dos
- * 1.414 que entregaram declararam isso em 2024/3 — Guaratinga/BA marcou
- * 371,02%, e a conta fecha com o que o próprio município enviou (verificado
- * direto na API). O valor é exibido como declarado e marcado como implausível:
- * corrigir seria inventar um número; esconder seria escolher o que o leitor vê.
+ * Acima de 100% o municipio declara gastar mais com pessoal do que TODA a sua
+ * receita; abaixo de zero, declara gasto negativo. Nenhum dos dois descreve uma
+ * prefeitura -- descrevem um formulario preenchido errado.
  *
- * Sem esta faixa, os seis ficariam no TOPO de qualquer ordenação por
- * percentual — exatamente onde mais destruiriam a credibilidade do painel.
+ * Os dois extremos apareceram no dado real de 2024, e por motivos diferentes:
+ *
+ * - Guaratinga/BA declarou **371,02%** (R$ 110 mi sobre R$ 29,6 mi).
+ * - Paripueira/AL declarou **despesa negativa** e portanto **-19,35%**.
+ *
+ * O caso negativo e o mais perigoso, e por uma razao que custou perceber: ele e
+ * **internamente coerente**. `despesa / RCL` da exatamente -19,35%, entao a
+ * conferencia NAO o acusa -- coerencia nao e plausibilidade. E num ranking por
+ * percentual ele iria para o **fim da lista**, parecendo o municipio mais
+ * economico do Nordeste.
+ *
+ * Exibidos como declarados e marcados. Corrigir seria inventar numero; esconder
+ * seria escolher quais declaracoes o leitor pode ver.
  */
 export const LIMITE_PLAUSIVEL = 100;
+export const MINIMO_PLAUSIVEL = 0;
 
 /** Onde o município cai em relação aos dois limites da Lei de
  *  Responsabilidade Fiscal. Sem percentual, a resposta é "não sei" — e "não
@@ -129,6 +138,7 @@ export const LIMITE_PLAUSIVEL = 100;
 export function faixa(m: Municipio, limites: Snapshot["limites"]): Faixa {
   if (m.percentual === null) return "sem-dado";
   if (m.percentual > LIMITE_PLAUSIVEL) return "implausivel";
+  if (m.percentual < MINIMO_PLAUSIVEL) return "implausivel";
   if (m.percentual > limites.legal) return "acima-legal";
   const prudencial = m.limitePrudencial ?? limites.prudencial;
   if (m.percentual > prudencial) return "acima-prudencial";
