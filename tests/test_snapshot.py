@@ -208,5 +208,86 @@ class DespesaPorFuncaoNoSnapshot(unittest.TestCase):
         self.assertIsNone(ContratoEntreLinguagens.snapshot["funcoes"])
 
 
+class ComparacaoEntreAnos(unittest.TestCase):
+    """`anterior` é o MESMO bimestre do ano anterior — nunca o período anterior.
+
+    A distinção não é preciosismo: o RREO é acumulado no ano, então o 6º
+    bimestre **contém** o 4º (mediana da razão b4/b6 medida em 0,629). Usar o
+    período anterior como comparação produziria deslocamentos de fatia com
+    mediana de 0,96 pp, contra 1,67 pp entre anos — ruído vestido de tendência.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.dir = tempfile.TemporaryDirectory()
+        banco = str(Path(cls.dir.name) / "c.db")
+        saida = Path(cls.dir.name) / "s.json"
+        with abrir(banco) as con:
+            gravar_entes(con, [Ente(2927408, "Salvador", "BA", "NE", "M", 1, "1")])
+            # 2023/6 é a comparação certa. 2024/4 é o período anterior e está
+            # aqui justamente para provar que ele NÃO é escolhido.
+            gravar_funcoes(con, 2927408, 2023, 6, Funcoes(
+                2927408, 2023, 6, 100.0, {"Educação": 50.0, "Cultura": 50.0}))
+            gravar_funcoes(con, 2927408, 2024, 4, Funcoes(
+                2927408, 2024, 4, 80.0, {"Educação": 80.0}))
+            gravar_funcoes(con, 2927408, 2024, 6, Funcoes(
+                2927408, 2024, 6, 200.0, {"Educação": 150.0, "Saúde": 50.0}))
+        subprocess.run(
+            [sys.executable, "-m", "fiscal", "--banco", banco, "exportar",
+             "--exercicio", "2024", "--periodo", "3", "--saida", str(saida)],
+            cwd=RAIZ, check=True, capture_output=True)
+        cls.f = json.loads(saida.read_text(encoding="utf-8"))["funcoes"]
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.dir.cleanup()
+
+    def test_a_comparacao_e_o_mesmo_bimestre_do_ano_anterior(self):
+        self.assertEqual((self.f["exercicio"], self.f["periodo"]), (2024, 6))
+        self.assertEqual(
+            (self.f["anterior"]["exercicio"], self.f["anterior"]["periodo"]),
+            (2023, 6),
+            "escolheu 2024/4, que é o período anterior mas está CONTIDO em 2024/6")
+
+    def test_o_periodo_intermediario_nao_entra_em_lugar_nenhum(self):
+        """2024/4 foi coletado e não pode vazar nem para o destaque nem para a
+        comparação — o total de 80 denunciaria."""
+        self.assertEqual(self.f["porMunicipio"]["2927408"][0], 200)
+        self.assertEqual(self.f["anterior"]["porMunicipio"]["2927408"][0], 100)
+
+    def test_os_dois_periodos_compartilham_o_array_de_rotulos(self):
+        """Índices que significassem funções diferentes em cada ano trocariam
+        educação por saúde na comparação, sem nada estourar."""
+        rot = self.f["rotulos"]
+        atual = {rot[i]: v for i, v in self.f["porMunicipio"]["2927408"][1]}
+        antes = {rot[i]: v for i, v in self.f["anterior"]["porMunicipio"]["2927408"][1]}
+        self.assertEqual(atual, {"Educação": 150, "Saúde": 50})
+        self.assertEqual(antes, {"Educação": 50, "Cultura": 50})
+
+    def test_funcao_que_so_existe_no_ano_anterior_ganha_indice(self):
+        """Cultura sumiu em 2024. Sem índice para ela, a linha de 2023 seria
+        descartada em silêncio e a soma do ano anterior deixaria de fechar."""
+        self.assertIn("Cultura", self.f["rotulos"])
+        total, valores = self.f["anterior"]["porMunicipio"]["2927408"]
+        self.assertEqual(sum(v for _, v in valores), total)
+
+    def test_sem_o_ano_anterior_a_chave_existe_e_vale_null(self):
+        """Fixture própria de propósito: depender do `setUpClass` de outra
+        classe amarra a ordem de execução do unittest, que não é garantida."""
+        with tempfile.TemporaryDirectory() as d:
+            banco = str(Path(d) / "so2024.db")
+            saida = Path(d) / "s.json"
+            with abrir(banco) as con:
+                gravar_entes(con, [Ente(2927408, "Salvador", "BA", "NE", "M", 1, "1")])
+                gravar_funcoes(con, 2927408, 2024, 6, Funcoes(
+                    2927408, 2024, 6, 10.0, {"Educação": 10.0}))
+            subprocess.run(
+                [sys.executable, "-m", "fiscal", "--banco", banco, "exportar",
+                 "--exercicio", "2024", "--periodo", "3", "--saida", str(saida)],
+                cwd=RAIZ, check=True, capture_output=True)
+            f = json.loads(saida.read_text(encoding="utf-8"))["funcoes"]
+        self.assertIsNone(f["anterior"], "não há 2023/6 para comparar")
+
+
 if __name__ == "__main__":
     unittest.main()

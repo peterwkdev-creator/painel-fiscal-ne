@@ -106,6 +106,32 @@ export interface Funcoes {
    * cada casa decimal custa bytes em 19.500 valores.
    */
   porMunicipio: Record<string, EntradaFuncoes>;
+  /**
+   * O **mesmo bimestre do ano anterior**, para comparação. `null` quando não
+   * foi coletado.
+   *
+   * Nunca o período anterior. O RREO é acumulado no ano, então o 6º bimestre
+   * **contém** o 4º — a mediana da razão b4/b6, medida em 03/09/2026 sobre
+   * 1.414 municípios, deu **0,629**: 63% do valor do 6º *é* o do 4º. A fatia
+   * de cada função mal se mexe entre eles (deslocamento mediano de 0,96 ponto
+   * percentual), e uma frase de tendência construída ali seria ruído.
+   *
+   * Entre o mesmo bimestre de dois anos as acumulações são disjuntas: o
+   * deslocamento mediano sobe para **1,67 pp**, com 42% das comparações
+   * movendo 2 pontos ou mais.
+   *
+   * Compartilha o array `rotulos` do bloco pai — índices que significassem
+   * funções diferentes em cada ano trocariam educação por saúde na comparação.
+   */
+  anterior: FuncoesAnterior | null;
+}
+
+export interface FuncoesAnterior {
+  exercicio: number;
+  periodo: number;
+  coletadoEm: string | null;
+  cobertura: { consultados: number; publicaram: number; naoFecham: number };
+  porMunicipio: Record<string, EntradaFuncoes>;
 }
 
 export type EntradaFuncoes = [

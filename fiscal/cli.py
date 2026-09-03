@@ -272,8 +272,40 @@ def cmd_conferir(args, *_) -> int:
     return 0
 
 
+def _funcoes_de(con, ex: int, pe: int, indice: dict[str, int]) -> dict[str, list]:
+    """As linhas de um período no formato esparso `[total, [[indice, valor]]]`.
+
+    O `indice` vem de fora porque os dois períodos comparados **têm de
+    compartilhar o mesmo array de rótulos**: índices que significassem funções
+    diferentes em cada ano trocariam educação por saúde na comparação, sem
+    nada estourar.
+    """
+    saida: dict[str, list] = {}
+    for r in con.execute(
+        "SELECT codigo_ibge, funcao, valor, total_declarado FROM despesa_funcao"
+        " WHERE exercicio=? AND periodo=? AND valor IS NOT NULL"
+        " ORDER BY codigo_ibge, valor DESC", (ex, pe)):
+        # Centavos num orçamento municipal são ruído, e cada casa decimal
+        # custa bytes em 19.500 valores. O total vem da mesma linha, arredondado
+        # do mesmo jeito, para que a soma continue conferindo contra ele.
+        entrada = saida.setdefault(
+            str(r["codigo_ibge"]),
+            [None if r["total_declarado"] is None else round(r["total_declarado"]), []])
+        entrada[1].append([indice[r["funcao"]], round(r["valor"])])
+    return saida
+
+
+def _cobertura_funcoes(con, ex: int, pe: int) -> dict:
+    r = con.execute(
+        "SELECT COUNT(*) t, SUM(publicou) p,"
+        "       SUM(CASE WHEN fecha=0 THEN 1 ELSE 0 END) nf"
+        "  FROM funcao_consulta WHERE exercicio=? AND periodo=?", (ex, pe)).fetchone()
+    return {"consultados": r["t"], "publicaram": r["p"] or 0, "naoFecham": r["nf"] or 0}
+
+
 def _bloco_funcoes(con) -> dict | None:
-    """A despesa por função, do bimestre mais recente já coletado.
+    """A despesa por função do bimestre mais recente, e o MESMO bimestre do ano
+    anterior para comparação.
 
     **O período não vem de `--periodo`, e isso é deliberado.** O RREO é
     bimestral (1..6) e o RGF é quadrimestral (1..3): um `--periodo 3` significa
@@ -281,10 +313,20 @@ def _bloco_funcoes(con) -> dict | None:
     o terceiro bimestre em vez do que se pediu. O último coletado é a única
     resposta que não depende de quem digitou o comando.
 
-    Formato esparso: cada município declara ~14 das 28 funções, e emitir as 28
-    com `null` nas outras dobraria o arquivo para não dizer nada. Os rótulos
-    saem uma vez só, ordenados pela soma no Nordeste — assim os índices mais
-    usados são os menores, e Educação é sempre `0`.
+    ## Por que a comparação é `(ex-1, MESMO pe)` e nunca o bimestre anterior
+
+    Medido em 03/09/2026, e o resultado mudou o desenho. O RREO é **acumulado no
+    ano**: o 6º bimestre já contém o 4º -- a mediana da razão b4/b6 deu **0,629**,
+    ou seja 63% do valor do 6º **é** o do 4º. Não são duas observações
+    independentes, são aninhadas, e a fatia de cada função mal se mexe entre
+    elas: mediana de **0,96 ponto percentual** de deslocamento.
+
+    Comparando o mesmo bimestre de dois anos, as acumulações são disjuntas e o
+    deslocamento mediano sobe para **1,67 pp**, com 42% das comparações movendo
+    2 pontos ou mais. É a mesma janela do ano, um ano depois.
+
+    Por isso a busca é por `(ex - 1, pe)` exatamente, e **não** pelo penúltimo
+    período coletado: se alguém varrer 2024/4, ele não pode virar a comparação.
     """
     ultimo = con.execute(
         "SELECT exercicio, periodo FROM funcao_consulta"
@@ -293,43 +335,52 @@ def _bloco_funcoes(con) -> dict | None:
         return None
     ex, pe = ultimo["exercicio"], ultimo["periodo"]
 
-    cob = con.execute(
-        "SELECT COUNT(*) t, SUM(publicou) p,"
-        "       SUM(CASE WHEN fecha=0 THEN 1 ELSE 0 END) nf"
-        "  FROM funcao_consulta WHERE exercicio=? AND periodo=?",
-        (ex, pe)).fetchone()
+    # O ano anterior só entra se o MESMO bimestre existir lá.
+    tem_anterior = con.execute(
+        "SELECT 1 FROM funcao_consulta WHERE exercicio=? AND periodo=? LIMIT 1",
+        (ex - 1, pe)).fetchone() is not None
+
+    # Os rótulos saem da UNIÃO dos dois períodos, ordenados pela soma no
+    # período em destaque. Uma função que só existe no ano anterior precisa de
+    # índice; sem ele, a linha dela seria descartada em silêncio.
+    periodos = [(ex, pe)] + ([(ex - 1, pe)] if tem_anterior else [])
+    marcas = ",".join("(?,?)" for _ in periodos)
+    args: list[int] = [x for par in periodos for x in par]
     rotulos = [r[0] for r in con.execute(
-        "SELECT funcao FROM despesa_funcao"
-        " WHERE exercicio=? AND periodo=? AND valor IS NOT NULL"
-        " GROUP BY funcao ORDER BY SUM(valor) DESC", (ex, pe))]
+        "SELECT funcao,"
+        "       SUM(CASE WHEN exercicio=? THEN valor ELSE 0 END) peso"
+        "  FROM despesa_funcao"
+        f" WHERE (exercicio, periodo) IN ({marcas}) AND valor IS NOT NULL"
+        " GROUP BY funcao ORDER BY peso DESC, funcao", [ex] + args)]
     indice = {nome: i for i, nome in enumerate(rotulos)}
 
-    por_municipio: dict[str, list] = {}
-    for r in con.execute(
-        "SELECT codigo_ibge, funcao, valor, total_declarado FROM despesa_funcao"
-        " WHERE exercicio=? AND periodo=? AND valor IS NOT NULL"
-        " ORDER BY codigo_ibge, valor DESC", (ex, pe)):
-        # Centavos num orçamento municipal são ruído, e cada casa decimal
-        # custa bytes em 19.500 valores. O total vem da mesma linha, arredondado
-        # do mesmo jeito, para que a soma continue conferindo contra ele.
-        entrada = por_municipio.setdefault(
-            str(r["codigo_ibge"]),
-            [None if r["total_declarado"] is None else round(r["total_declarado"]), []])
-        entrada[1].append([indice[r["funcao"]], round(r["valor"])])
-
-    return {
+    bloco = {
         "exercicio": ex,
         "periodo": pe,
         "fonte": armazem.FONTE_FUNCOES,
         "coletadoEm": con.execute(
             "SELECT MAX(coletado_em) FROM funcao_consulta"
             " WHERE exercicio=? AND periodo=?", (ex, pe)).fetchone()[0],
-        "cobertura": {"consultados": cob["t"], "publicaram": cob["p"] or 0,
-                      "naoFecham": cob["nf"] or 0},
+        "cobertura": _cobertura_funcoes(con, ex, pe),
         "rotulos": rotulos,
         "colunasMunicipio": ["total", "valores"],
-        "porMunicipio": por_municipio,
+        "porMunicipio": _funcoes_de(con, ex, pe, indice),
+        # `null` quando o mesmo bimestre do ano anterior não foi coletado. Fica
+        # em bloco irmão, e não como coluna nova, para que uma página que não
+        # queira a comparação simplesmente o ignore.
+        "anterior": None,
     }
+    if tem_anterior:
+        bloco["anterior"] = {
+            "exercicio": ex - 1,
+            "periodo": pe,
+            "coletadoEm": con.execute(
+                "SELECT MAX(coletado_em) FROM funcao_consulta"
+                " WHERE exercicio=? AND periodo=?", (ex - 1, pe)).fetchone()[0],
+            "cobertura": _cobertura_funcoes(con, ex - 1, pe),
+            "porMunicipio": _funcoes_de(con, ex - 1, pe, indice),
+        }
+    return bloco
 
 
 def cmd_exportar(args, *_) -> int:
@@ -427,6 +478,10 @@ def cmd_exportar(args, *_) -> int:
         f = snapshot["funcoes"]
         print(f"  despesa por função de {f['exercicio']}/{f['periodo']}: "
               f"{len(f['porMunicipio'])} municípios, {len(f['rotulos'])} funções.")
+        a = f["anterior"]
+        print(f"  comparação com {a['exercicio']}/{a['periodo']}: "
+              f"{len(a['porMunicipio'])} municípios." if a
+              else "  sem ano anterior para comparar.")
     else:
         print("  sem despesa por função: rode `ingerir-funcoes`.")
     return 0
