@@ -1,8 +1,11 @@
-# Painel Fiscal do Nordeste
+# Painel Fiscal
 
-How much every one of the **1,793 municipalities** of Brazil's Northeast spends
-on personnel, against the limit the law sets for it — with the source and the
-collection date next to every figure.
+How much every one of Brazil's **5,570 municipalities** spends on personnel,
+against the limit the law sets for it — with the source and the collection date
+next to every figure.
+
+It started as a Northeast panel (1,793 municipalities); the geographic cut was
+always a flag (`--regiao NE` / `--regiao BR`), so going national was a command.
 
 Brazil's Fiscal Responsibility Law caps municipal executive personnel spending
 at **54%** of net current revenue, with a **51.3%** prudential threshold that
@@ -11,10 +14,16 @@ by the National Treasury through SICONFI — but it arrives **one municipality p
 request**, in 200+ lines of chart-of-accounts per query, with no comparison and
 no reading. In practice nobody looks.
 
-> **Status: the full Northeast sweep is complete.** 1,793 municipalities
-> consulted, 1,414 filed their report, 379 did not — and the consistency check
-> finds zero divergences across all 1,414. Everything below runs against the
-> live API today.
+> **Status: the national sweep is complete.** For the third quarter of 2024,
+> all **5,570** municipalities were consulted: **3,244 filed** their report and
+> 2,326 did not, with **zero divergences** across all 3,244. Everything below
+> runs against the live API today.
+>
+> **The historical series is still Northeast-only.** Five earlier quarters
+> (2023 Q1 through 2024 Q2) cover 1,793 municipalities; only the latest quarter
+> is national. Sweeping the rest is one command per quarter and about an hour
+> each — it simply has not been run yet, and saying so is cheaper than letting
+> a reader assume the series is national.
 
 ## Run it
 
@@ -25,10 +34,11 @@ dependencies to install.
 python -m fiscal ingerir-entes && python -m fiscal ingerir
 ```
 
-The first command fetches the 1,793 municipalities in a single request. The
-second sweeps their Fiscal Management Reports — one request each, roughly **57
-minutes** for the whole region. It is **resumable**: interrupt it and run it
-again, and it continues instead of re-reading.
+The first command fetches every municipality in a single request — 1,793 for
+the Northeast, 5,570 for the country with `--regiao BR`. The second sweeps
+their Fiscal Management Reports, one request each: roughly **57 minutes** for
+the Northeast and **three hours** for the country. It is **resumable**:
+interrupt it and run it again, and it continues instead of re-reading.
 
 ```bash
 python -m fiscal ingerir --limite 25      # stop after 25, to try it out
@@ -47,7 +57,7 @@ cd painel && npm install && npm run build && npx serve out
 A Next.js static export: the page is generated at build time from the snapshot
 on disk, so the visitor downloads HTML with the numbers already in it. No
 backend, no database in production, no loading state. One client component
-exists, for searching and sorting 1,793 rows.
+exists, for searching and sorting the rows.
 
 ## Test it
 
@@ -55,8 +65,10 @@ exists, for searching and sorting 1,793 rows.
 python -m unittest discover -s tests -t .
 ```
 
-**49 tests, no network and no real waiting** — the HTTP transport and the clock
-are both injected. The fixtures are responses **captured from the live API** on
+**79 tests, no network and no real waiting** — the HTTP transport and the clock
+are both injected, and the suite prints nothing: a real
+`ATENÇÃO: incomplete database` has to be distinguishable from the same warning
+coming out of a 20-municipality fixture. The fixtures are responses **captured from the live API** on
 2026-09-03, including the empty one, because the empty response is this API's
 central trap.
 
@@ -106,26 +118,44 @@ It does not interpret, accuse, or declare anyone in breach — it shows the file
 figure and the legal limit. It has no backend, no production database, and no
 login.
 
-## First real numbers
+## The numbers, nationally
 
-The complete sweep of 2024's third quarter, all 1,793 municipalities:
+The complete sweep of 2024's third quarter, all **5,570** municipalities:
 
 | | |
 |---|---|
-| Filed a report | **1,414** |
-| **Did not file at all** | **379** (21%) |
-| Over the 54% legal cap | **198** |
-| Over the 51.3% prudential threshold | 182 |
-| Average of the plausible filings | 47.22% |
+| Filed a report | **3,244** (58%) |
+| **Did not file at all** | **2,326** (42%) |
+| Over the 54% legal cap | **335** |
+| Between 51.3% and 54% (prudential band) | 278 |
+| Filings outside 0–100%, kept and labelled | 26 |
+| Average of the plausible filings | 45.48% |
+| Median | 45.00% |
+
+The bands above are **disjoint**: 335 are over the legal cap and a further 278
+sit between the two thresholds. Adding them gives the 613 over the prudential
+limit.
+
+**The filing rate is the finding, not the spending.** It ranges from 100% to
+14% across states and follows no regional line: Santa Catarina files 86% and
+neighbouring Rio Grande do Sul 15%; Bahia files 99% and Maranhão 49%, both in
+the Northeast. Whatever explains it, it is not geography.
 
 **Sergipe averages 51.97% across the whole state** — the state mean sits above
 the prudential threshold. Among municipalities over 200,000 people: Lauro de
 Freitas/BA 70.25%, Imperatriz/MA 60.64%, Paulista/PE 55.30%.
 
-One in five municipalities did not file at all. A spot check of one non-filer
-returned empty across four different periods and every parameter combination,
-while a control query for Salvador returned 225 rows — the absence is real, not
-a query artifact.
+**Two in five municipalities did not file at all** — 2,326 of 5,570. That was
+one in five while only the Northeast was swept, which is exactly why the claim
+is worth re-measuring rather than carrying forward.
+
+The absence is real, not a query artifact, and the check that proves it needs a
+**control**: querying non-filers and getting nothing back proves nothing, since
+that is also what a broken query returns. Probing municipalities the system
+records as *having* filed, in the same run, returned 116 to 168 rows each —
+including inside Rio Grande do Sul, where only 15% file. Zero and non-zero out
+of the same probe, in the same minute, is what separates "this state does not
+file" from "my query is wrong".
 
 ## License
 

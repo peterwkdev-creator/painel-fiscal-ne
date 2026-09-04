@@ -42,9 +42,6 @@ RECORTES = {
 #: 5.571 no país, com zero entes existindo só no SICONFI.
 MUNICIPIOS_SO_NO_IBGE = 1
 
-ESPERADOS_NO_NE = 1793
-
-
 def _br(v: float | None, casas: int = 2, sufixo: str = "") -> str:
     """Número no formato brasileiro. `None` vira travessão, nunca zero."""
     if v is None:
@@ -270,12 +267,21 @@ def cmd_conferir(args, *_) -> int:
 
     print(f"Universo: {universo} municípios. Consultados: {consultados}. "
           f"Com os três números: {len(linhas)}.")
-    # O universo esperado depende do recorte gravado no banco, e não de uma
-    # constante do Nordeste -- senão a varredura nacional avisa "errado" a cada
-    # execução, e um aviso que sempre aparece é um aviso que ninguém lê.
-    esperado = 5570 if universo > ESPERADOS_NO_NE else ESPERADOS_NO_NE
-    if universo != esperado:
-        print(f"  ATENÇÃO: o universo deveria ser {esperado}.")
+    # O universo é conferido contra os tamanhos que `RECORTES` declara, e não
+    # contra um número inferido da própria contagem.
+    #
+    # A versão anterior fazia `5570 if universo > 1793 else 1793`, o que decide
+    # o esperado a partir do que achou -- e tem um buraco: um banco NACIONAL
+    # que tivesse perdido exatamente 3.777 municípios cairia em 1.793, bateria
+    # com o "esperado" e passaria em silêncio. Também duplicava, em número
+    # solto, o que `RECORTES` já diz.
+    #
+    # Assim, qualquer contagem que não seja a de um recorte conhecido avisa --
+    # inclusive uma varredura interrompida no meio, que é o caso comum.
+    tamanhos = {n for _, n in RECORTES.values()}
+    if universo not in tamanhos:
+        print(f"  ATENÇÃO: o universo é {universo}, e nenhum recorte conhecido "
+              f"tem esse tamanho ({sorted(tamanhos)}). Banco incompleto?")
     if not linhas:
         return 0
 

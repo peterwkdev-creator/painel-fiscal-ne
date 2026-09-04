@@ -5,14 +5,16 @@ que se quer garantir é que **rodar o comando de novo** não gasta requisição
 repetida nem muda número. Isso só o caminho completo mostra.
 """
 
+import contextlib
+import io
 import json
 import tempfile
 import unittest
 from pathlib import Path
 
-from fiscal.armazem import abrir
-from fiscal.cli import principal
-from fiscal.siconfi import FALHA_DE_REDE, Resposta
+from fiscal.armazem import abrir, gravar_entes
+from fiscal.cli import RECORTES, principal
+from fiscal.siconfi import FALHA_DE_REDE, Ente, Resposta
 
 FIX = Path(__file__).parent / "fixtures"
 
@@ -50,8 +52,24 @@ class PontaAPonta(unittest.TestCase):
         self.dir.cleanup()
 
     def rodar(self, *argv, transporte):
-        return principal(["--banco", self.banco, *argv],
-                         transporte=transporte, dormir=lambda _: None)
+        """Roda o comando e **engole a saída**, devolvendo o código de retorno.
+
+        O CLI imprime progresso de propósito — uma varredura de 57 minutos sem
+        sinal de vida é indistinguível de uma travada. Mas numa suíte isso
+        despejava 40 linhas no terminal, e o custo não é estético: no histórico
+        de um terminal, um `ATENÇÃO: banco incompleto` de verdade fica
+        indistinguível do mesmo aviso vindo de uma fixture de 20 municípios.
+        As outras três suítes do workspace não imprimem nada; esta era a única.
+
+        A saída fica disponível em `self.saida` para quem quiser afirmar sobre
+        ela — engolir não é o mesmo que descartar.
+        """
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            codigo = principal(["--banco", self.banco, *argv],
+                               transporte=transporte, dormir=lambda _: None)
+        self.saida = buffer.getvalue()
+        return codigo
 
     def test_ingere_entes_e_depois_o_rgf(self):
         t = TransporteFalso()
@@ -138,3 +156,98 @@ class PontaAPonta(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestUniversoConferido(unittest.TestCase):
+    """O aviso de banco incompleto, que ninguém exercitava.
+
+    A versão anterior decidia o universo esperado a partir da própria contagem
+    (`5570 if universo > 1793 else 1793`), com os dois números soltos no código
+    em vez de saírem de `RECORTES`.
+
+    **E ela não estava errada em nenhuma entrada alcançável hoje** — o canário
+    mostrou isso: com só dois recortes, as duas versões concordam em tudo. O
+    que ela quebra é o recorte SEGUINTE, e é o que
+    `test_um_recorte_novo_nao_dispara_aviso_falso` prova.
+
+    A lição de escrever isto: **contrato igual não prova mudança.** Os quatro
+    primeiros testes aqui descrevem o comportamento certo e passam nas duas
+    versões; só o quinto distingue. Um teste que não reprova o código antigo
+    não defende a correção — documenta o que já funcionava.
+    """
+
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.banco = str(Path(self.dir.name) / "teste.db")
+
+    def tearDown(self):
+        self.dir.cleanup()
+
+    def conferir(self) -> str:
+        saida = io.StringIO()
+        with contextlib.redirect_stdout(saida):
+            principal(["--banco", self.banco, "conferir"],
+                      transporte=TransporteFalso(), dormir=lambda _: None)
+        return saida.getvalue()
+
+    def _gravar_entes(self, quantos: int) -> None:
+        """Usa `gravar_entes`, o mesmo caminho da produção.
+
+        Montar o INSERT à mão faria o teste conhecer o esquema por conta
+        própria — e passar a quebrar a cada coluna nova por um motivo que não
+        tem nada a ver com o que ele afirma.
+        """
+        entes = [
+            Ente(codigo_ibge=900000 + i, nome=f"M{i}", uf="XX",
+                 regiao="Teste", esfera="M", populacao=None, cnpj=None)
+            for i in range(quantos)
+        ]
+        with abrir(self.banco) as con:
+            gravar_entes(con, entes)
+            con.commit()
+
+    def test_avisa_quando_o_universo_nao_e_de_nenhum_recorte(self):
+        self._gravar_entes(20)
+        self.assertIn("ATENÇÃO", self.conferir())
+
+    def test_nao_avisa_no_tamanho_do_NORDESTE(self):
+        self._gravar_entes(RECORTES["NE"][1])
+        self.assertNotIn("ATENÇÃO", self.conferir())
+
+    def test_nao_avisa_no_tamanho_do_BRASIL(self):
+        self._gravar_entes(RECORTES["BR"][1])
+        self.assertNotIn("ATENÇÃO", self.conferir())
+
+    def test_um_recorte_novo_nao_dispara_aviso_falso(self):
+        """**O teste que justifica a mudança**, e o único que a versão anterior
+        reprova.
+
+        A versão anterior era `5570 if universo > 1793 else 1793`: ela decidia
+        o esperado a partir da própria contagem, com os dois números soltos no
+        código. Num recorte de um estado — 645 municípios em São Paulo — ela
+        concluiria "esperado 1793" e avisaria **banco incompleto num banco
+        completo**. Aviso falso é pior que aviso nenhum: ensina a ignorar.
+
+        Escrito depois de o canário mostrar que os outros testes deste caso
+        **passavam nas duas versões**. Contrato igual não prova mudança; era
+        preciso o caso em que elas divergem.
+        """
+        recorte_novo = ("SP", (["SP"], 645))
+        RECORTES[recorte_novo[0]] = recorte_novo[1]
+        try:
+            self._gravar_entes(645)
+            self.assertNotIn("ATENÇÃO", self.conferir(),
+                             "avisou banco incompleto num recorte completo")
+        finally:
+            del RECORTES[recorte_novo[0]]
+
+    def test_contagem_intermediaria_sempre_avisa(self):
+        """Varredura interrompida é o caso comum, e tem de gritar."""
+        for parcial in (1792, 1794, 3000, 5569):
+            with self.subTest(universo=parcial):
+                self.dir.cleanup()
+                self.dir = tempfile.TemporaryDirectory()
+                self.banco = str(Path(self.dir.name) / "teste.db")
+                self._gravar_entes(parcial)
+                self.assertIn("ATENÇÃO", self.conferir(),
+                              f"{parcial} municípios passaram sem aviso")
