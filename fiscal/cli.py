@@ -23,6 +23,25 @@ BANCO_PADRAO = os.environ.get("PAINEL_FISCAL_BANCO", "painel.db")
 
 # 1.793 municípios com RGF municipal no Nordeste. Não é 1.794: Fernando de
 # Noronha é distrito estadual de PE, não município. Ver a regra do sistema.
+#: O recorte é **bandeira, não pressuposto**, como no `sys-educacao-inep` e no
+#: `sys-observatorio-ne`. Cravar o Nordeste no código transformaria a expansão
+#: numa refatoração; sendo parâmetro, ela é um comando.
+#:
+#: Os números vêm da reconciliação de 03/09/2026 contra `/entes`: 1.793
+#: municípios no Nordeste e 5.570 no país. O IBGE conta 1.794 e 5.571, e a
+#: única diferença — nos dois recortes — é **Fernando de Noronha**, distrito
+#: estadual de PE e não município. Nenhum ente existe só no SICONFI.
+RECORTES = {
+    "NE": (NORDESTE, 1793),
+    "BR": (None, 5570),
+}
+
+#: Quantos municípios o IBGE conta e o SICONFI não. É **um**, e é Fernando de
+#: Noronha — verificado nos dois recortes em 03/09/2026, comparando `/entes`
+#: com a lista de localidades do IBGE: 1.793 × 1.794 no Nordeste e 5.570 ×
+#: 5.571 no país, com zero entes existindo só no SICONFI.
+MUNICIPIOS_SO_NO_IBGE = 1
+
 ESPERADOS_NO_NE = 1793
 
 
@@ -35,12 +54,14 @@ def _br(v: float | None, casas: int = 2, sufixo: str = "") -> str:
 
 
 def cmd_ingerir_entes(args, transporte: Transporte, dormir: Dormir) -> int:
-    achados = entes(transporte, dormir=dormir, uf=NORDESTE, esfera="M")
+    ufs, esperados = RECORTES[args.regiao]
+    achados = entes(transporte, dormir=dormir, uf=ufs, esfera="M")
     with armazem.abrir(args.banco) as con:
         n = armazem.gravar_entes(con, achados)
-    print(f"{n} municípios do Nordeste gravados.")
-    if n != ESPERADOS_NO_NE:
-        print(f"  ATENÇÃO: esperados {ESPERADOS_NO_NE}, vieram {n}. "
+    onde = "do Nordeste" if args.regiao == "NE" else "do Brasil"
+    print(f"{n} municípios {onde} gravados.")
+    if n != esperados:
+        print(f"  ATENÇÃO: esperados {esperados}, vieram {n}. "
               f"Conferir antes de seguir — o universo mudou ou a API mudou.")
     return 0
 
@@ -249,8 +270,12 @@ def cmd_conferir(args, *_) -> int:
 
     print(f"Universo: {universo} municípios. Consultados: {consultados}. "
           f"Com os três números: {len(linhas)}.")
-    if universo != ESPERADOS_NO_NE:
-        print(f"  ATENÇÃO: o universo deveria ser {ESPERADOS_NO_NE}.")
+    # O universo esperado depende do recorte gravado no banco, e não de uma
+    # constante do Nordeste -- senão a varredura nacional avisa "errado" a cada
+    # execução, e um aviso que sempre aparece é um aviso que ninguém lê.
+    esperado = 5570 if universo > ESPERADOS_NO_NE else ESPERADOS_NO_NE
+    if universo != esperado:
+        print(f"  ATENÇÃO: o universo deveria ser {esperado}.")
     if not linhas:
         return 0
 
@@ -435,10 +460,17 @@ def cmd_exportar(args, *_) -> int:
             "universo": universo,
             "consultados": consultados,
             "publicaram": publicaram,
-            # Fernando de Noronha é distrito estadual de PE, não município: não
-            # entrega RGF municipal. A diferença para os 1.794 do IBGE é
-            # exibida, não escondida. Ver `especs/painel-fiscal.md`.
-            "municipiosIbgeNoNordeste": 1794,
+            # **Derivado do universo, não cravado.** A versão anterior tinha
+            # `1794` literal, e a expansão nacional o teria publicado inalterado
+            # ao lado de 5.570 municípios -- uma "diferença" de 3.776 que não
+            # existe, exibida com a autoridade de um número conferido.
+            #
+            # A relação é estável e vale nos dois recortes: o IBGE conta
+            # **exatamente um a mais** que o SICONFI, e esse um é Fernando de
+            # Noronha, distrito estadual de PE e não município, que por isso
+            # não entrega RGF municipal. Reconciliado em 03/09/2026 nos dois
+            # universos: nenhum ente existe só no SICONFI.
+            "municipiosIbge": universo + MUNICIPIOS_SO_NO_IBGE,
         },
         "colunas": ["codigo", "nome", "uf", "populacao", "publicou",
                     "percentual", "limitePrudencial", "despesa", "rclAjustada"],
@@ -492,7 +524,10 @@ def montar() -> argparse.ArgumentParser:
     p.add_argument("--banco", default=BANCO_PADRAO)
     sub = p.add_subparsers(dest="comando", required=True)
 
-    sub.add_parser("ingerir-entes", help="a lista de municípios do NE (1 requisição)")
+    ie = sub.add_parser("ingerir-entes",
+                        help="a lista de municípios (1 requisição)")
+    ie.add_argument("--regiao", default="NE", choices=sorted(RECORTES),
+                    help="NE (padrão) ou BR")
 
     # O RREO e bimestral (1..6); o RGF e quadrimestral (1..3). Sao subcomandos
     # separados de proposito: um `--periodo 6` no comando errado devolve vazio

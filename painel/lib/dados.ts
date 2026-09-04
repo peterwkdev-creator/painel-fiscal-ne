@@ -36,7 +36,13 @@ export interface Snapshot {
     universo: number;
     consultados: number;
     publicaram: number;
-    municipiosIbgeNoNordeste: number;
+    /**
+     * Quantos municípios o IBGE conta na mesma área — sempre **um a mais**
+     * que o SICONFI, e esse um é Fernando de Noronha, distrito estadual de PE.
+     * Derivado do universo, nunca literal: com a expansão nacional, um `1794`
+     * cravado viraria uma diferença de 3.776 que não existe.
+     */
+    municipiosIbge: number;
   };
   colunas: string[];
   municipios: LinhaMunicipio[];

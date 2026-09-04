@@ -73,10 +73,13 @@ class ContratoEntreLinguagens(unittest.TestCase):
         self.assertEqual(set(self.snapshot), campos_da_interface(self.ts, "Snapshot"))
 
     def test_as_chaves_de_cobertura_sao_exatamente_as_declaradas(self):
-        declaradas = set(re.findall(
-            r"cobertura: \{(.*?)\};", self.ts, re.S)[0].split("\n")[0:0] or [])
         corpo = re.search(r"cobertura: \{(.*?)\n  \};", self.ts, re.S).group(1)
-        declaradas = set(re.findall(r"(\w+):", corpo))
+        # **Chave é o que ABRE a linha**, com indentação -- não qualquer
+        # `palavra:` no meio do bloco. A versão anterior usava `(\w+):` solto e
+        # em 03/09/2026 leu a palavra "literal:" de um comentário JSDoc como se
+        # fosse campo do contrato, reprovando um snapshot correto. Teste que
+        # falha por prosa é teste que ensina a ignorá-lo.
+        declaradas = set(re.findall(r"^\s+(\w+)\??:", corpo, re.M))
         self.assertEqual(set(self.snapshot["cobertura"]), declaradas)
 
     def test_a_ordem_das_colunas_bate_com_a_tupla_do_typescript(self):
@@ -123,9 +126,17 @@ class OQueOSnapshotPromete(unittest.TestCase):
         self.assertEqual(self.snapshot["limites"]["prudencial"], 51.3)
         self.assertEqual(self.snapshot["limites"]["legal"], 54.0)
 
-    def test_a_diferenca_para_o_ibge_e_exibida_nao_escondida(self):
-        self.assertEqual(
-            self.snapshot["cobertura"]["municipiosIbgeNoNordeste"], 1794)
+    def test_a_diferenca_para_o_ibge_e_derivada_e_nao_cravada(self):
+        """O IBGE conta exatamente **um a mais** que o SICONFI, nos dois
+        recortes, e esse um é Fernando de Noronha.
+
+        A versão anterior exigia o literal `1794`: passava no Nordeste, e teria
+        deixado a expansão nacional publicar "1794" ao lado de 5.570 municípios
+        — uma diferença de 3.776 que não existe, com a aparência de um número
+        conferido.
+        """
+        c = self.snapshot["cobertura"]
+        self.assertEqual(c["municipiosIbge"], c["universo"] + 1)
 
 
 class DespesaPorFuncaoNoSnapshot(unittest.TestCase):

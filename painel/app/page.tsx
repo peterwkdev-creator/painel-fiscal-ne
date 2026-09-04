@@ -109,11 +109,12 @@ export default async function Pagina() {
         </p>
         <p>
           O universo é de <strong>{s.cobertura.universo}</strong> municípios com
-          relatório municipal, e não os{" "}
-          {s.cobertura.municipiosIbgeNoNordeste} que o IBGE conta no Nordeste. A
-          diferença é <strong>Fernando de Noronha</strong>, distrito estadual de
-          Pernambuco e não município: sem Executivo próprio, não entrega
-          relatório. Os dois números estão certos, e a diferença fica exibida em
+          relatório municipal, e não os {s.cobertura.municipiosIbge} que o IBGE
+          conta na mesma área. A diferença é{" "}
+          <strong>Fernando de Noronha</strong>, distrito estadual de Pernambuco
+          e não município: sem Executivo próprio, não entrega relatório. É
+          exatamente <strong>um</strong> nos dois recortes — o do Nordeste e o
+          do país. Os dois números estão certos, e a diferença fica exibida em
           vez de ajustada.
         </p>
         <p>
