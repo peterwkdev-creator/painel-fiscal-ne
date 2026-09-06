@@ -184,19 +184,21 @@ class DespesaPorFuncaoNoSnapshot(unittest.TestCase):
         que não existe no banco — em vez do 6º. As duas escalas coexistem no
         mesmo número e é exatamente aí que o erro passa despercebido.
         """
-        self.assertEqual((self.f["exercicio"], self.f["periodo"]), (2024, 6))
+        self.assertEqual(
+            (self.f["exercicios"][0]["exercicio"], self.f["periodo"]), (2024, 6))
 
     def test_os_rotulos_saem_ordenados_pela_soma_no_nordeste(self):
         # Educação 200, Saúde 190, Urbanismo 60 -- somando os dois municípios.
         self.assertEqual(self.f["rotulos"], ["Educação", "Saúde", "Urbanismo"])
 
     def test_quem_nao_publicou_fica_fora_do_mapa_mas_conta_na_cobertura(self):
-        self.assertNotIn("2111300", self.f["porMunicipio"])
-        self.assertEqual(self.f["cobertura"],
+        atual = self.f["exercicios"][0]
+        self.assertNotIn("2111300", atual["porMunicipio"])
+        self.assertEqual(atual["cobertura"],
                          {"consultados": 3, "publicaram": 2, "naoFecham": 0})
 
     def test_o_valor_e_endereçado_por_indice_no_array_de_rotulos(self):
-        total, valores = self.f["porMunicipio"]["2507507"]
+        total, valores = self.f["exercicios"][0]["porMunicipio"]["2507507"]
         self.assertEqual(total, 150)
         nomes = {self.f["rotulos"][i]: v for i, v in valores}
         self.assertEqual(nomes, {"Saúde": 90, "Urbanismo": 60})
@@ -204,14 +206,15 @@ class DespesaPorFuncaoNoSnapshot(unittest.TestCase):
     def test_a_soma_das_partes_fecha_com_o_total_declarado(self):
         """A garantia que a fonte oferece de graça — e que o arredondamento
         para reais inteiros não pode estragar."""
-        for codigo, (total, valores) in self.f["porMunicipio"].items():
-            self.assertEqual(sum(v for _, v in valores), total,
-                             f"a soma não fecha em {codigo}")
+        for e in self.f["exercicios"]:
+            for codigo, (total, valores) in e["porMunicipio"].items():
+                self.assertEqual(sum(v for _, v in valores), total,
+                                 f"a soma não fecha em {codigo} ({e['exercicio']})")
 
     def test_o_bimestre_anterior_nao_vaza_para_dentro_do_atual(self):
         """Salvador declarou os dois bimestres. Misturá-los somaria o mesmo
         gasto duas vezes, e o total declarado deixaria de conferir."""
-        total, valores = self.f["porMunicipio"]["2927408"]
+        total, valores = self.f["exercicios"][0]["porMunicipio"]["2927408"]
         self.assertEqual(total, 300)
         self.assertEqual(len(valores), 2)
 
@@ -220,7 +223,7 @@ class DespesaPorFuncaoNoSnapshot(unittest.TestCase):
 
 
 class ComparacaoEntreAnos(unittest.TestCase):
-    """`anterior` é o MESMO bimestre do ano anterior — nunca o período anterior.
+    """A série é o MESMO bimestre em anos diferentes — nunca o período anterior.
 
     A distinção não é preciosismo: o RREO é acumulado no ano, então o 6º
     bimestre **contém** o 4º (mediana da razão b4/b6 medida em 0,629). Usar o
@@ -253,36 +256,106 @@ class ComparacaoEntreAnos(unittest.TestCase):
     def tearDownClass(cls):
         cls.dir.cleanup()
 
-    def test_a_comparacao_e_o_mesmo_bimestre_do_ano_anterior(self):
-        self.assertEqual((self.f["exercicio"], self.f["periodo"]), (2024, 6))
-        self.assertEqual(
-            (self.f["anterior"]["exercicio"], self.f["anterior"]["periodo"]),
-            (2023, 6),
+    def test_a_serie_e_do_mesmo_bimestre_em_anos_diferentes(self):
+        self.assertEqual(self.f["periodo"], 6)
+        self.assertEqual([e["exercicio"] for e in self.f["exercicios"]], [2024, 2023],
             "escolheu 2024/4, que é o período anterior mas está CONTIDO em 2024/6")
+
+    def test_a_serie_vem_do_mais_recente_para_o_mais_antigo(self):
+        """Quem quer só a foto usa `exercicios[0]`, e a ordem é o que torna
+        isso verdade sem cada chamador reordenar por conta."""
+        anos = [e["exercicio"] for e in self.f["exercicios"]]
+        self.assertEqual(anos, sorted(anos, reverse=True))
 
     def test_o_periodo_intermediario_nao_entra_em_lugar_nenhum(self):
         """2024/4 foi coletado e não pode vazar nem para o destaque nem para a
         comparação — o total de 80 denunciaria."""
-        self.assertEqual(self.f["porMunicipio"]["2927408"][0], 200)
-        self.assertEqual(self.f["anterior"]["porMunicipio"]["2927408"][0], 100)
+        totais = [e["porMunicipio"]["2927408"][0] for e in self.f["exercicios"]]
+        self.assertEqual(totais, [200, 100])
+        self.assertNotIn(80, totais, "2024/4 vazou para a série")
 
     def test_os_dois_periodos_compartilham_o_array_de_rotulos(self):
         """Índices que significassem funções diferentes em cada ano trocariam
         educação por saúde na comparação, sem nada estourar."""
         rot = self.f["rotulos"]
-        atual = {rot[i]: v for i, v in self.f["porMunicipio"]["2927408"][1]}
-        antes = {rot[i]: v for i, v in self.f["anterior"]["porMunicipio"]["2927408"][1]}
-        self.assertEqual(atual, {"Educação": 150, "Saúde": 50})
-        self.assertEqual(antes, {"Educação": 50, "Cultura": 50})
+        leitura = [{rot[i]: v for i, v in e["porMunicipio"]["2927408"][1]}
+                   for e in self.f["exercicios"]]
+        self.assertEqual(leitura[0], {"Educação": 150, "Saúde": 50})
+        self.assertEqual(leitura[1], {"Educação": 50, "Cultura": 50})
 
     def test_funcao_que_so_existe_no_ano_anterior_ganha_indice(self):
         """Cultura sumiu em 2024. Sem índice para ela, a linha de 2023 seria
         descartada em silêncio e a soma do ano anterior deixaria de fechar."""
         self.assertIn("Cultura", self.f["rotulos"])
-        total, valores = self.f["anterior"]["porMunicipio"]["2927408"]
+        total, valores = self.f["exercicios"][1]["porMunicipio"]["2927408"]
         self.assertEqual(sum(v for _, v in valores), total)
 
-    def test_sem_o_ano_anterior_a_chave_existe_e_vale_null(self):
+    def test_tres_exercicios_viram_tres_pontos_de_serie(self):
+        """O caso que a forma anterior não comportava.
+
+        Com "atual" mais "anterior", um terceiro ano exigiria um terceiro
+        formato ou repetiria o mesmo ano em dois lugares do arquivo -- e dado
+        repetido é dado que diverge. Este teste é a razão de a lista existir.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            banco = str(Path(d) / "tres.db")
+            saida = Path(d) / "s.json"
+            with abrir(banco) as con:
+                gravar_entes(con, [Ente(2927408, "Salvador", "BA", "NE", "M", 1, "1")])
+                for ex, valor in ((2022, 60.0), (2023, 80.0), (2024, 100.0)):
+                    gravar_funcoes(con, 2927408, ex, 6, Funcoes(
+                        2927408, ex, 6, valor, {"Educação": valor}))
+            subprocess.run(
+                [sys.executable, "-m", "fiscal", "--banco", banco, "exportar",
+                 "--exercicio", "2024", "--periodo", "3", "--saida", str(saida)],
+                cwd=RAIZ, check=True, capture_output=True)
+            f = json.loads(saida.read_text(encoding="utf-8"))["funcoes"]
+
+        self.assertEqual([e["exercicio"] for e in f["exercicios"]],
+                         [2024, 2023, 2022])
+        self.assertEqual([e["porMunicipio"]["2927408"][0] for e in f["exercicios"]],
+                         [100, 80, 60])
+        # Cada exercício carrega a SUA cobertura: um ano varrido pela metade
+        # não pode herdar a cobertura do ano completo.
+        for e in f["exercicios"]:
+            self.assertEqual(e["cobertura"]["consultados"], 1)
+
+    def test_exercicio_varrido_pela_metade_fica_FORA_da_serie(self):
+        """O canário desta frente.
+
+        Um ano incompleto na série separa os municípios em dois grupos
+        indistinguíveis: os que não entregaram naquele ano, e os que ainda não
+        perguntamos. A página diria "não tem 2022" sobre quem tem, e o buraco
+        na linha temporal se leria como interrupção do serviço.
+
+        É a mesma distinção da faixa `nao-consultado`, e aqui ela é pior:
+        ausência de coleta disfarçada de ausência de gasto.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            banco = str(Path(d) / "parcial.db")
+            saida = Path(d) / "s.json"
+            with abrir(banco) as con:
+                gravar_entes(con, [
+                    Ente(2927408, "Salvador", "BA", "NE", "M", 1, "1"),
+                    Ente(2507507, "João Pessoa", "PB", "NE", "M", 1, "1"),
+                ])
+                # 2024 completo: os dois entes consultados.
+                for cod in (2927408, 2507507):
+                    gravar_funcoes(con, cod, 2024, 6, Funcoes(
+                        cod, 2024, 6, 100.0, {"Educação": 100.0}))
+                # 2023 pela METADE: só um dos dois.
+                gravar_funcoes(con, 2927408, 2023, 6, Funcoes(
+                    2927408, 2023, 6, 90.0, {"Educação": 90.0}))
+            subprocess.run(
+                [sys.executable, "-m", "fiscal", "--banco", banco, "exportar",
+                 "--exercicio", "2024", "--periodo", "3", "--saida", str(saida)],
+                cwd=RAIZ, check=True, capture_output=True)
+            f = json.loads(saida.read_text(encoding="utf-8"))["funcoes"]
+
+        self.assertEqual([e["exercicio"] for e in f["exercicios"]], [2024],
+                         "2023 foi varrido pela metade e não pode entrar")
+
+    def test_com_um_ano_so_a_serie_tem_um_elemento(self):
         """Fixture própria de propósito: depender do `setUpClass` de outra
         classe amarra a ordem de execução do unittest, que não é garantida."""
         with tempfile.TemporaryDirectory() as d:
@@ -297,7 +370,8 @@ class ComparacaoEntreAnos(unittest.TestCase):
                  "--exercicio", "2024", "--periodo", "3", "--saida", str(saida)],
                 cwd=RAIZ, check=True, capture_output=True)
             f = json.loads(saida.read_text(encoding="utf-8"))["funcoes"]
-        self.assertIsNone(f["anterior"], "não há 2023/6 para comparar")
+        self.assertEqual(len(f["exercicios"]), 1, "não há 2023/6 para comparar")
+        self.assertEqual(f["exercicios"][0]["exercicio"], 2024)
 
 
 if __name__ == "__main__":

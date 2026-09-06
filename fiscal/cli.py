@@ -335,8 +335,7 @@ def _cobertura_funcoes(con, ex: int, pe: int) -> dict:
 
 
 def _bloco_funcoes(con) -> dict | None:
-    """A despesa por função do bimestre mais recente, e o MESMO bimestre do ano
-    anterior para comparação.
+    """A despesa por função, em SÉRIE — todos os exercícios do mesmo bimestre.
 
     **O período não vem de `--periodo`, e isso é deliberado.** O RREO é
     bimestral (1..6) e o RGF é quadrimestral (1..3): um `--periodo 3` significa
@@ -344,74 +343,85 @@ def _bloco_funcoes(con) -> dict | None:
     o terceiro bimestre em vez do que se pediu. O último coletado é a única
     resposta que não depende de quem digitou o comando.
 
-    ## Por que a comparação é `(ex-1, MESMO pe)` e nunca o bimestre anterior
+    ## Por que a série é do MESMO bimestre em anos diferentes
 
-    Medido em 03/09/2026, e o resultado mudou o desenho. O RREO é **acumulado no
-    ano**: o 6º bimestre já contém o 4º -- a mediana da razão b4/b6 deu **0,629**,
-    ou seja 63% do valor do 6º **é** o do 4º. Não são duas observações
-    independentes, são aninhadas, e a fatia de cada função mal se mexe entre
-    elas: mediana de **0,96 ponto percentual** de deslocamento.
+    Medido em 03/09/2026, e o resultado decidiu o desenho. O RREO é **acumulado
+    no ano**: o 6º bimestre já contém o 4º -- a mediana da razão b4/b6 deu
+    **0,629**, ou seja 63% do valor do 6º **é** o do 4º. Não são duas
+    observações independentes, são aninhadas, e a fatia de cada função mal se
+    mexe entre elas: mediana de **0,96 ponto percentual** de deslocamento.
 
     Comparando o mesmo bimestre de dois anos, as acumulações são disjuntas e o
     deslocamento mediano sobe para **1,67 pp**, com 42% das comparações movendo
     2 pontos ou mais. É a mesma janela do ano, um ano depois.
 
-    Por isso a busca é por `(ex - 1, pe)` exatamente, e **não** pelo penúltimo
-    período coletado: se alguém varrer 2024/4, ele não pode virar a comparação.
+    Por isso a série é `(ano, MESMO pe)` para cada ano coletado, e **nunca**
+    mistura bimestres: se alguém varrer 2024/4, ele não entra na série do 6º.
+
+    ## Uma lista, e não "atual" mais "anterior"
+
+    A versão anterior emitia o período em destaque e um bloco `anterior`. Com
+    três exercícios ou mais isso obrigaria a um terceiro formato, ou a repetir
+    o mesmo ano em dois lugares do arquivo -- e dado repetido é dado que
+    diverge. A lista vem do mais recente para o mais antigo, e quem quer só a
+    foto usa o primeiro elemento.
     """
     ultimo = con.execute(
         "SELECT exercicio, periodo FROM funcao_consulta"
         " ORDER BY exercicio DESC, periodo DESC LIMIT 1").fetchone()
     if ultimo is None:
         return None
-    ex, pe = ultimo["exercicio"], ultimo["periodo"]
+    pe = ultimo["periodo"]
 
-    # O ano anterior só entra se o MESMO bimestre existir lá.
-    tem_anterior = con.execute(
-        "SELECT 1 FROM funcao_consulta WHERE exercicio=? AND periodo=? LIMIT 1",
-        (ex - 1, pe)).fetchone() is not None
+    # Todo exercício com ESTE bimestre, do mais recente ao mais antigo --
+    # **e só os COMPLETOS**.
+    #
+    # Um exercício varrido pela metade colocaria na série um ponto que separa
+    # os municípios em dois grupos indistinguíveis: os que não entregaram
+    # naquele ano, e os que ainda não perguntamos. A página diria "não tem
+    # 2022" sobre quem tem, e a série desenharia um buraco que é nosso, não do
+    # município.
+    #
+    # É a mesma distinção da faixa `nao-consultado`, agora dentro de uma série
+    # -- e aqui ela é pior, porque um buraco no meio de uma linha temporal se
+    # lê como interrupção do serviço, não como ausência de coleta.
+    universo = con.execute("SELECT COUNT(*) FROM ente").fetchone()[0]
+    anos = [r["exercicio"] for r in con.execute(
+        "SELECT exercicio FROM funcao_consulta WHERE periodo = ?"
+        " GROUP BY exercicio HAVING COUNT(DISTINCT codigo_ibge) >= ?"
+        " ORDER BY exercicio DESC", (pe, universo))]
+    if not anos:
+        return None
 
-    # Os rótulos saem da UNIÃO dos dois períodos, ordenados pela soma no
-    # período em destaque. Uma função que só existe no ano anterior precisa de
-    # índice; sem ele, a linha dela seria descartada em silêncio.
-    periodos = [(ex, pe)] + ([(ex - 1, pe)] if tem_anterior else [])
-    marcas = ",".join("(?,?)" for _ in periodos)
-    args: list[int] = [x for par in periodos for x in par]
+    # Os rótulos saem da UNIÃO de todos os exercícios, ordenados pela soma no
+    # mais recente. Uma função que só existe num ano antigo precisa de índice;
+    # sem ele, a linha dela seria descartada em silêncio.
+    marcas = ",".join("?" for _ in anos)
     rotulos = [r[0] for r in con.execute(
         "SELECT funcao,"
         "       SUM(CASE WHEN exercicio=? THEN valor ELSE 0 END) peso"
         "  FROM despesa_funcao"
-        f" WHERE (exercicio, periodo) IN ({marcas}) AND valor IS NOT NULL"
-        " GROUP BY funcao ORDER BY peso DESC, funcao", [ex] + args)]
+        f" WHERE exercicio IN ({marcas}) AND periodo = ? AND valor IS NOT NULL"
+        " GROUP BY funcao ORDER BY peso DESC, funcao", [anos[0], *anos, pe])]
     indice = {nome: i for i, nome in enumerate(rotulos)}
 
-    bloco = {
-        "exercicio": ex,
+    return {
         "periodo": pe,
         "fonte": armazem.FONTE_FUNCOES,
-        "coletadoEm": con.execute(
-            "SELECT MAX(coletado_em) FROM funcao_consulta"
-            " WHERE exercicio=? AND periodo=?", (ex, pe)).fetchone()[0],
-        "cobertura": _cobertura_funcoes(con, ex, pe),
         "rotulos": rotulos,
         "colunasMunicipio": ["total", "valores"],
-        "porMunicipio": _funcoes_de(con, ex, pe, indice),
-        # `null` quando o mesmo bimestre do ano anterior não foi coletado. Fica
-        # em bloco irmão, e não como coluna nova, para que uma página que não
-        # queira a comparação simplesmente o ignore.
-        "anterior": None,
+        "exercicios": [
+            {
+                "exercicio": ex,
+                "coletadoEm": con.execute(
+                    "SELECT MAX(coletado_em) FROM funcao_consulta"
+                    " WHERE exercicio=? AND periodo=?", (ex, pe)).fetchone()[0],
+                "cobertura": _cobertura_funcoes(con, ex, pe),
+                "porMunicipio": _funcoes_de(con, ex, pe, indice),
+            }
+            for ex in anos
+        ],
     }
-    if tem_anterior:
-        bloco["anterior"] = {
-            "exercicio": ex - 1,
-            "periodo": pe,
-            "coletadoEm": con.execute(
-                "SELECT MAX(coletado_em) FROM funcao_consulta"
-                " WHERE exercicio=? AND periodo=?", (ex - 1, pe)).fetchone()[0],
-            "cobertura": _cobertura_funcoes(con, ex - 1, pe),
-            "porMunicipio": _funcoes_de(con, ex - 1, pe, indice),
-        }
-    return bloco
 
 
 def cmd_exportar(args, *_) -> int:
@@ -514,12 +524,11 @@ def cmd_exportar(args, *_) -> int:
           f"{universo - consultados} ainda não consultados.")
     if snapshot["funcoes"]:
         f = snapshot["funcoes"]
-        print(f"  despesa por função de {f['exercicio']}/{f['periodo']}: "
-              f"{len(f['porMunicipio'])} municípios, {len(f['rotulos'])} funções.")
-        a = f["anterior"]
-        print(f"  comparação com {a['exercicio']}/{a['periodo']}: "
-              f"{len(a['porMunicipio'])} municípios." if a
-              else "  sem ano anterior para comparar.")
+        print(f"  despesa por função, {len(f['rotulos'])} funções, "
+              f"{len(f['exercicios'])} exercício(s) no {f['periodo']}º bimestre:")
+        for e in f["exercicios"]:
+            print(f"    {e['exercicio']}/{f['periodo']}: "
+                  f"{len(e['porMunicipio'])} municípios.")
     else:
         print("  sem despesa por função: rode `ingerir-funcoes`.")
     return 0
