@@ -21,3 +21,8 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+
+# Saida de erro de execucao, mesma categoria do `.log` acima: e do momento,
+# nao do projeto. Faltava, e o `.err` da varredura de 2019 apareceu como
+# arquivo novo em 07/09/2026.
+*.err
