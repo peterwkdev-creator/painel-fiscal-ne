@@ -48,6 +48,32 @@ python -m fiscal conferir                 # internal consistency, reported not f
 python -m fiscal exportar                 # the snapshot the panel reads
 ```
 
+### Health spending, 26 years in 26 requests
+
+A second source, from a different agency: **SIOPS**, published through DATASUS.
+One request returns every municipality of a state across **all 26 exercises**
+(2000–2025), so the whole country costs **26 requests and about 13 seconds** —
+against 5,570 requests *per exercise* for the Fiscal Management Report.
+
+```bash
+python -m fiscal ingerir-saude            # 5,568 municipalities, 143,754 values
+python -m fiscal saude                    # median and floor, year by year
+```
+
+Two things it refuses to do. It **will not silently record a state that came
+back smaller** than the previous sweep — coverage does not shrink on its own,
+so either the source changed (which is news) or the command was called wrong;
+`--permitir-encolher` is there for when shrinking is the intent. And it **does
+not compare the whole series against the 15% floor**: that floor only binds
+from 2004 on. Constitutional Amendment 29 set 7% for the year 2000 and had each
+municipality close its own gap by at least a fifth per year, so between 2001 and
+2003 there is no comparable national floor at all — and saying otherwise would
+accuse 3,428 municipalities of breaking a rule that did not yet apply to them.
+
+The Federal District is absent by design, not by failure: it holds both state
+and municipal powers, so it files no municipal report and has no municipal
+series.
+
 ## The panel
 
 ```bash
@@ -65,12 +91,13 @@ exists, for searching and sorting the rows.
 python -m unittest discover -s tests -t .
 ```
 
-**79 tests, no network and no real waiting** — the HTTP transport and the clock
+**107 tests, no network and no real waiting** — the HTTP transport and the clock
 are both injected, and the suite prints nothing: a real
 `ATENÇÃO: incomplete database` has to be distinguishable from the same warning
-coming out of a 20-municipality fixture. The fixtures are responses **captured from the live API** on
-2026-09-03, including the empty one, because the empty response is this API's
-central trap.
+coming out of a 20-municipality fixture. The fixtures are responses **captured
+from the live API**, including the empty one, because the empty response is this
+API's central trap — and, for SIOPS, a real latin-1 page with its tags left
+unclosed, which is that source's.
 
 Among them is a **cross-language contract test**: it reads the TypeScript types
 as text and compares them against what the Python exporter actually writes. The

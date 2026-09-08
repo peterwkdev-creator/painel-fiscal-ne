@@ -74,6 +74,35 @@ CREATE TABLE IF NOT EXISTS funcao_consulta (
     PRIMARY KEY (codigo_ibge, exercicio, periodo)
 );
 
+-- Aplicacao em saude (SIOPS/DATASUS). Uma linha por municipio/exercicio/
+-- indicador. **A ausencia nao tem linha**: no SIOPS uma requisicao traz a UF
+-- inteira, entao ano sem valor e ausencia da FONTE, nao pergunta que faltou
+-- fazer -- ao contrario do `pessoal`, onde `publicou` separa as duas.
+CREATE TABLE IF NOT EXISTS saude (
+    codigo_ibge INTEGER NOT NULL,
+    exercicio   INTEGER NOT NULL,
+    indicador   TEXT    NOT NULL,
+    valor       REAL    NOT NULL,
+    fonte       TEXT    NOT NULL,
+    coletado_em TEXT    NOT NULL,
+    PRIMARY KEY (codigo_ibge, exercicio, indicador)
+);
+
+-- A COBERTURA de cada varredura de UF, guardada de proposito. Sem ela, uma
+-- coleta que trouxesse metade dos municipios produziria um banco valido,
+-- coerente e menor -- e nada acusaria. Ver a licao de 07/09/2026 em
+-- `.claude/rules/stack.md`: artefato MENOR nao e artefato quebrado.
+CREATE TABLE IF NOT EXISTS saude_varredura (
+    uf          TEXT    NOT NULL,
+    indicador   TEXT    NOT NULL,
+    municipios  INTEGER NOT NULL,
+    valores     INTEGER NOT NULL,
+    nao_casaram INTEGER NOT NULL,
+    nomes_fora  INTEGER NOT NULL,
+    coletado_em TEXT    NOT NULL,
+    PRIMARY KEY (uf, indicador)
+);
+
 -- Marca de progresso: e o que torna a varredura retomavel sem reler o que ja
 -- veio. Uma hora de rede e tempo de sobra para algo dar errado.
 CREATE TABLE IF NOT EXISTS coleta (
@@ -89,6 +118,7 @@ CREATE TABLE IF NOT EXISTS coleta (
 
 FONTE = "SICONFI/Tesouro Nacional — RGF Anexo 01"
 FONTE_FUNCOES = "SICONFI/Tesouro Nacional — RREO Anexo 02"
+FONTE_SAUDE = "SIOPS/Ministério da Saúde — TabNet/DATASUS"
 
 
 def agora() -> str:
@@ -200,6 +230,53 @@ def gravar_funcoes(con: sqlite3.Connection, codigo_ibge: int, exercicio: int,
         "   fonte=excluded.fonte, coletado_em=excluded.coletado_em",
         [(codigo_ibge, exercicio, periodo, nome, valor, f.total,
           FONTE_FUNCOES, agora_) for nome, valor in f.valores.items()])
+
+
+def gravar_saude(con: sqlite3.Connection, uf: str, indicador: str,
+                 series, por6: dict, nomes_fora: int) -> dict:
+    """Grava a série de saúde de uma UF, e devolve o que foi gravado.
+
+    `por6` vem de `siops.resolver_ibge` e traduz o código de seis dígitos do
+    SIOPS para os sete do IBGE. **Município que não casa não é gravado e não é
+    silenciado**: ele volta contado em `nao_casaram`, para quem chamou decidir.
+    Casar 99% e seguir em frente é como uma base perde um estado inteiro sem que
+    nada acuse.
+    """
+    agora_ = agora()
+    linhas = []
+    nao_casaram = []
+    for s in series:
+        ibge = por6.get(s.codigo_siops)
+        if ibge is None:
+            nao_casaram.append((s.codigo_siops, s.nome))
+            continue
+        for ano, valor in s.valores.items():
+            linhas.append((ibge, ano, indicador, valor, FONTE_SAUDE, agora_))
+    con.executemany(
+        "INSERT INTO saude (codigo_ibge, exercicio, indicador, valor, fonte,"
+        " coletado_em) VALUES (?,?,?,?,?,?)"
+        " ON CONFLICT(codigo_ibge, exercicio, indicador) DO UPDATE SET"
+        "   valor=excluded.valor, fonte=excluded.fonte,"
+        "   coletado_em=excluded.coletado_em",
+        linhas)
+    con.execute(
+        "INSERT INTO saude_varredura (uf, indicador, municipios, valores,"
+        " nao_casaram, nomes_fora, coletado_em) VALUES (?,?,?,?,?,?,?)"
+        " ON CONFLICT(uf, indicador) DO UPDATE SET"
+        "   municipios=excluded.municipios, valores=excluded.valores,"
+        "   nao_casaram=excluded.nao_casaram, nomes_fora=excluded.nomes_fora,"
+        "   coletado_em=excluded.coletado_em",
+        (uf.upper(), indicador, len(series) - len(nao_casaram), len(linhas),
+         len(nao_casaram), nomes_fora, agora_))
+    return {"municipios": len(series) - len(nao_casaram), "valores": len(linhas),
+            "nao_casaram": nao_casaram}
+
+
+def cobertura_saude(con: sqlite3.Connection, indicador: str) -> dict:
+    """Quantos municípios e valores já existem, por UF -- a régua do encolher."""
+    return {r[0]: (r[1], r[2]) for r in con.execute(
+        "SELECT uf, municipios, valores FROM saude_varredura WHERE indicador=?",
+        (indicador,))}
 
 
 def ja_consultados_funcoes(con: sqlite3.Connection, exercicio: int,

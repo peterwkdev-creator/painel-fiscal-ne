@@ -63,12 +63,17 @@ class PontaAPonta(unittest.TestCase):
 
         A saída fica disponível em `self.saida` para quem quiser afirmar sobre
         ela — engolir não é o mesmo que descartar.
+
+        **O `stderr` também**, e ele estava de fora: o relato de interrupção
+        (`>>> N municípios gravados`) sai por lá, e escapava da suíte inteira.
+        Uma linha só, e por isso ninguém via — mas a promessa era silêncio.
         """
-        buffer = io.StringIO()
-        with contextlib.redirect_stdout(buffer):
+        buffer, erros = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(erros):
             codigo = principal(["--banco", self.banco, *argv],
                                transporte=transporte, dormir=lambda _: None)
         self.saida = buffer.getvalue()
+        self.erros = erros.getvalue()
         return codigo
 
     def test_ingere_entes_e_depois_o_rgf(self):

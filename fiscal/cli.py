@@ -13,7 +13,7 @@ import os
 import sys
 import time
 
-from . import armazem
+from . import armazem, siops
 from .siconfi import (
     NORDESTE, PAUSA_PADRAO, Dormir, ErroSiconfi, Transporte,
     entes, funcoes, pessoal, transporte_http,
@@ -210,6 +210,101 @@ def cmd_ingerir_funcoes(args, transporte: Transporte, dormir: Dormir) -> int:
     print(f"{lidos} lidos, {publicaram} publicaram, {nao_fecham} com soma que "
           f"não fecha com o total declarado.")
     return 1 if falha else 0
+
+
+def cmd_ingerir_saude(args, transporte: Transporte, dormir: Dormir) -> int:
+    """Varre a aplicação em saúde (SIOPS/DATASUS).
+
+    Desenho oposto ao do `ingerir`: aqui **uma requisição traz a UF inteira em
+    26 exercícios**, então não há retomada por município nem contagem de
+    pendentes -- são 26 requisições para o país, ~15 s.
+
+    O que existe no lugar é a **guarda de encolhimento**: uma UF que volte com
+    menos municípios do que a última varredura produz um banco válido, coerente
+    e menor, e nada acusaria. Ver a lição de 07/09/2026 em `stack.md`.
+    """
+    t = getattr(args, "transporte_siops", None) or siops.transporte_http()
+    with armazem.abrir(args.banco) as con:
+        entes_ = list(con.execute(
+            "SELECT codigo_ibge, nome, uf FROM ente WHERE esfera='M'"))
+        antes = armazem.cobertura_saude(con, args.indicador)
+    if not entes_:
+        print("Nenhum ente no banco. Rode `ingerir-entes` primeiro.", file=sys.stderr)
+        return 2
+
+    ufs = [u.upper() for u in args.uf] if args.uf else list(siops.UFS)
+    recusadas = [u for u in ufs if u in siops.SEM_SERIE_MUNICIPAL]
+    if recusadas:
+        print(f"{', '.join(recusadas)}: sem série MUNICIPAL no SIOPS "
+              f"(o DF acumula as competências de estado e município).",
+              file=sys.stderr)
+        ufs = [u for u in ufs if u not in recusadas]
+
+    total_v = total_m = 0
+    encolheram: list[str] = []
+    falhas: list[str] = []
+    for uf in ufs:
+        nomes_uf = {c // 10: n for c, n, u in entes_ if u == uf}
+        por6 = {c // 10: c for c, _, u in entes_ if u == uf}
+        try:
+            anos, series = siops.serie_da_uf(
+                uf, t, dormir=dormir, indicador=args.indicador)
+        except siops.ErroSiops as e:
+            falhas.append(f"{uf}: {e}")
+            print(f"{uf}  FALHOU  {e}", file=sys.stderr)
+            continue
+        fora = siops.conferir_nomes(series, nomes_uf)
+        antes_m = antes.get(uf, (0, 0))[0]
+        with armazem.abrir(args.banco) as con:
+            r = armazem.gravar_saude(con, uf, args.indicador, series, por6, len(fora))
+        total_v += r["valores"]
+        total_m += r["municipios"]
+        aviso = ""
+        if r["municipios"] < antes_m:
+            encolheram.append(f"{uf} {antes_m} -> {r['municipios']}")
+            aviso = f"  <== ENCOLHEU (tinha {antes_m})"
+        print(f"{uf}  {r['municipios']:>4} municípios · {r['valores']:>6} valores"
+              f" · {len(anos)} anos · não casaram {len(r['nao_casaram'])}"
+              f" · nomes divergentes {len(fora)}{aviso}")
+        for codigo, nome, ibge in fora:
+            print(f"      nome diverge: {codigo} {nome!r} no SIOPS, {ibge!r} no IBGE")
+
+    print(f"\n{len(ufs) - len(falhas)} UFs · {total_m} municípios · {total_v} valores")
+    if encolheram and not args.permitir_encolher:
+        print("\nRECUSADO: UF com menos municípios que a varredura anterior — "
+              + "; ".join(encolheram)
+              + "\nA cobertura não diminui sozinha: ou a fonte mudou (e isso é "
+              "notícia), ou o comando foi chamado errado. Para gravar assim "
+              "mesmo: --permitir-encolher", file=sys.stderr)
+        return 1
+    return 1 if falhas else 0
+
+
+def cmd_saude(args, *_) -> int:
+    """O que foi lido, por exercício, contra o piso legal DAQUELE ano."""
+    import statistics
+    with armazem.abrir(args.banco) as con:
+        anos = [r[0] for r in con.execute(
+            "SELECT DISTINCT exercicio FROM saude WHERE indicador=? ORDER BY 1",
+            (args.indicador,))]
+        if not anos:
+            print("Nada em `saude`. Rode `ingerir-saude` primeiro.", file=sys.stderr)
+            return 2
+        print("exerc.  municípios  mediana  piso legal  abaixo do piso")
+        for ano in anos:
+            v = [r[0] for r in con.execute(
+                "SELECT valor FROM saude WHERE exercicio=? AND indicador=?",
+                (ano, args.indicador))]
+            piso = siops.piso_legal(ano)
+            if piso is None:
+                # 2001-2003: a EC 29 mandava cada ente fechar a PRÓPRIA
+                # diferença em 1/5 ao ano. Não há régua nacional, e inventar
+                # uma seria pior que não ter.
+                fim = "   individual          —"
+            else:
+                fim = f"   {piso:>6.1f}%      {sum(1 for x in v if x < piso):>6}"
+            print(f"{ano}    {len(v):>7}   {statistics.median(v):>6.2f}%{fim}")
+    return 0
 
 
 def cmd_funcoes(args, *_) -> int:
@@ -579,19 +674,39 @@ def montar() -> argparse.ArgumentParser:
         if nome == "listar":
             s.add_argument("--acima-do-limite", action="store_true")
             s.add_argument("--limite", type=int, default=30)
+
+    # O SIOPS nao tem exercicio nem periodo: uma requisicao por UF traz os 26
+    # anos. Por isso ele NAO entra no laco acima -- herdar `--exercicio` daria
+    # uma bandeira que nao faz nada, que e pior que nao ter bandeira.
+    for nome, ajuda in (("ingerir-saude", "varre a aplicação em saúde (26 UFs)"),
+                        ("saude", "o que foi lido, contra o piso de cada ano")):
+        s = sub.add_parser(nome, help=ajuda)
+        s.add_argument("--indicador", default=siops.INDICADOR_EC29)
+        if nome == "ingerir-saude":
+            s.add_argument("--uf", action="append",
+                           help="repetir para varrer só algumas; padrão: todas")
+            s.add_argument("--permitir-encolher", action="store_true",
+                           help="grava UF com menos municípios que a anterior")
     return p
 
 
 def principal(argv=None, transporte: Transporte | None = None,
-              dormir: Dormir = time.sleep) -> int:
+              dormir: Dormir = time.sleep, transporte_siops=None) -> int:
     args = montar().parse_args(argv)
     t = transporte or transporte_http()
+    # O SIOPS fala outro protocolo (POST com corpo), entao o transporte dele tem
+    # outra assinatura e viaja separado -- injetavel pelo mesmo motivo do outro.
+    args.transporte_siops = transporte_siops
     fn = {"ingerir-entes": cmd_ingerir_entes, "ingerir": cmd_ingerir,
           "resumo": cmd_resumo, "listar": cmd_listar,
           "conferir": cmd_conferir, "exportar": cmd_exportar,
-          "ingerir-funcoes": cmd_ingerir_funcoes, "funcoes": cmd_funcoes}[args.comando]
+          "ingerir-funcoes": cmd_ingerir_funcoes, "funcoes": cmd_funcoes,
+          "ingerir-saude": cmd_ingerir_saude, "saude": cmd_saude}[args.comando]
     try:
         return fn(args, t, dormir)
     except ErroSiconfi as e:
+        print(f"erro: {e}", file=sys.stderr)
+        return 1
+    except siops.ErroSiops as e:
         print(f"erro: {e}", file=sys.stderr)
         return 1
