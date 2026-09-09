@@ -429,6 +429,76 @@ def _cobertura_funcoes(con, ex: int, pe: int) -> dict:
     return {"consultados": r["t"], "publicaram": r["p"] or 0, "naoFecham": r["nf"] or 0}
 
 
+def _bloco_saude(con) -> dict | None:
+    """A aplicação de recursos próprios em saúde (SIOPS), 26 exercícios.
+
+    ## Por que um array alinhado, e não `{ano: valor}` por município
+
+    São 5.568 municípios. Repetir as 26 chaves de ano em cada um custa mais que
+    os próprios números. O array segue a ordem de `anos`, com `null` onde a
+    fonte não tem valor -- **e a ordem vira contrato**: casada errado, cada
+    município exibe o percentual do ano vizinho, e a página continua bem
+    formada. Por isso há teste dos dois lados.
+
+    ## Null é ausência da FONTE, e isso é diferente do RGF
+
+    No RGF a ausência tem duas causas -- o município não entregou, ou nós ainda
+    não perguntamos -- e o campo `publicou` as separa. Aqui uma requisição traz
+    a UF inteira em todos os exercícios, então ano sem valor é ausência da
+    fonte, e só. Medido: 3 células em 4.784 no Ceará.
+
+    ## O piso legal NÃO é 15% em todo ano, e ele viaja junto
+
+    A EC 29/2000 fixou 7% para 2000 e escalonou até 15% em 2004; entre 2001 e
+    2003 o piso é individual, e não existe régua nacional comparável. Mandar só
+    os valores deixaria o painel livre para compará-los todos contra 15% -- que
+    acusaria 3.428 municípios de descumprir uma regra que ainda não valia. O
+    piso de cada ano vai no bloco, com `null` onde não há.
+    """
+    linhas = con.execute(
+        "SELECT indicador, COUNT(*) n, MAX(coletado_em) em FROM saude"
+        " GROUP BY indicador ORDER BY n DESC LIMIT 1").fetchone()
+    if linhas is None:
+        return None
+    indicador = linhas["indicador"]
+
+    anos = [r[0] for r in con.execute(
+        "SELECT DISTINCT exercicio FROM saude WHERE indicador=? ORDER BY 1",
+        (indicador,))]
+    if not anos:
+        return None
+    posicao = {a: i for i, a in enumerate(anos)}
+
+    por_municipio: dict[str, list] = {}
+    for r in con.execute(
+        "SELECT codigo_ibge, exercicio, valor FROM saude WHERE indicador=?"
+        " ORDER BY codigo_ibge, exercicio", (indicador,)):
+        chave = str(r["codigo_ibge"])
+        v = por_municipio.get(chave)
+        if v is None:
+            v = por_municipio[chave] = [None] * len(anos)
+        v[posicao[r["exercicio"]]] = r["valor"]
+
+    cobertura = [dict(uf=r["uf"], municipios=r["municipios"], valores=r["valores"])
+                 for r in con.execute(
+        "SELECT uf, municipios, valores FROM saude_varredura WHERE indicador=?"
+        " ORDER BY uf", (indicador,))]
+
+    return {
+        "indicador": indicador,
+        # O rótulo do site, não o do TabNet: `3.2_%R.Próprios_em_Saúde-EC_29`
+        # identifica a consulta e não explica nada a quem lê a página.
+        "rotulo": "Recursos próprios aplicados em saúde",
+        "fonte": armazem.FONTE_SAUDE,
+        "coletadoEm": linhas["em"],
+        "anos": anos,
+        # `null` onde não há régua nacional -- ver o docstring.
+        "pisoPorAno": [siops.piso_legal(a) for a in anos],
+        "porMunicipio": por_municipio,
+        "cobertura": cobertura,
+    }
+
+
 def _bloco_funcoes(con) -> dict | None:
     """A despesa por função, em SÉRIE — todos os exercícios do mesmo bimestre.
 
@@ -557,6 +627,7 @@ def cmd_exportar(args, *_) -> int:
             serie.setdefault(str(r["codigo_ibge"]), []).append(
                 [r["exercicio"], r["periodo"], bool(r["publicou"]), r["percentual"]])
         bloco_funcoes = _bloco_funcoes(con)
+        bloco_saude = _bloco_saude(con)
 
     consultados = sum(1 for l in linhas if l["publicou"] is not None)
     publicaram = sum(1 for l in linhas if l["publicou"] == 1)
@@ -608,6 +679,9 @@ def cmd_exportar(args, *_) -> int:
         # existe sempre, porque o TypeScript do outro lado declara o campo e o
         # teste de contrato compara os dois conjuntos de chaves.
         "funcoes": bloco_funcoes,
+        # Mesma regra da chave acima: existe sempre, `null` enquanto o
+        # `ingerir-saude` não tiver rodado.
+        "saude": bloco_saude,
     }
     destino = Path(args.saida)
     destino.parent.mkdir(parents=True, exist_ok=True)
@@ -626,6 +700,14 @@ def cmd_exportar(args, *_) -> int:
                   f"{len(e['porMunicipio'])} municípios.")
     else:
         print("  sem despesa por função: rode `ingerir-funcoes`.")
+    if snapshot["saude"]:
+        sa = snapshot["saude"]
+        print(f"  aplicação em saúde, {len(sa['anos'])} exercícios "
+              f"({sa['anos'][0]}-{sa['anos'][-1]}), "
+              f"{len(sa['porMunicipio'])} municípios, "
+              f"{len(sa['cobertura'])} UFs varridas.")
+    else:
+        print("  sem aplicação em saúde: rode `ingerir-saude`.")
     return 0
 
 

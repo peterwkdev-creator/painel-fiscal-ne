@@ -70,6 +70,40 @@ export interface Snapshot {
    * sempre — é o que o teste de contrato do lado Python compara.
    */
   funcoes: Funcoes | null;
+  /**
+   * A aplicação de recursos próprios em saúde (SIOPS), 26 exercícios.
+   *
+   * `null` enquanto o `ingerir-saude` não tiver rodado. A chave existe sempre —
+   * é o que o teste de contrato do lado Python compara.
+   */
+  saude: Saude | null;
+}
+
+/**
+ * A aplicação em saúde: 2000 a 2025, do SIOPS pelo TabNet do DATASUS.
+ *
+ * É a série mais longa do conjunto — o gasto com pessoal tem 15 quadrimestres
+ * e a despesa por função tem 6 exercícios.
+ */
+export type Saude = {
+  indicador: string;
+  rotulo: string;
+  fonte: string;
+  coletadoEm: string | null;
+  anos: number[];
+  /**
+   * O piso legal de cada ano, alinhado a `anos`, com `null` onde não há um
+   * comparável — a EC 29/2000 escalonou de 7% em 2000 até 15% em 2004, e entre
+   * 2001 e 2003 o piso é individual de cada município.
+   */
+  pisoPorAno: (number | null)[];
+  /**
+   * Por código do IBGE, um valor por ano **NA ORDEM de `anos`**. A ordem é
+   * contrato: casada errado, cada município exibe o percentual do ano vizinho
+   * e a página continua bem formada.
+   */
+  porMunicipio: Record<string, (number | null)[]>;
+  cobertura: { uf: string; municipios: number; valores: number }[];
 }
 
 /**
