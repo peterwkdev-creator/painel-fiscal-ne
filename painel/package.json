@@ -7,7 +7,6 @@
     "dev": "next dev",
     "build": "next build",
     "start": "npx serve out",
-    "lint": "next lint",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
